@@ -140,7 +140,7 @@ T hmmalign<T>::logLik(const std::string& sequence) const
 			// match matrix
 			DP_matrix[seq_L * (i) + (j)].ln_match = m_parameters.m_E[i][sequence[j]] + log_base(m_parameters.m_trans_matrix[i].into_match.from_match * exp_base(DP_matrix[seq_L * (i - 1) + (j - 1)].ln_match) + m_parameters.m_trans_matrix[i].into_match.from_insertion * exp_base(DP_matrix[seq_L * (i - 1) + (j - 1)].ln_insertion) + m_parameters.m_trans_matrix[i].into_match.from_deletion * exp_base(DP_matrix[seq_L * (i - 1) + (j - 1)].ln_deletion) + m_parameters.m_trans_matrix[i].into_match.from_left_clip * exp_base(left_clip_matrix[j - 1]));
 
-			// insertionion matrix
+			// insertion matrix
 			DP_matrix[seq_L * (i) + (j)].ln_insertion = m_parameters.m_uniform_base_e[sequence[j]] + log_base(m_parameters.m_trans_matrix[i].into_insertion.from_match * exp_base(DP_matrix[seq_L * (i) + (j - 1)].ln_match) + m_parameters.m_trans_matrix[i].into_insertion.from_insertion * exp_base(DP_matrix[seq_L * (i) + (j - 1)].ln_insertion));
 
 			// deletion matrix

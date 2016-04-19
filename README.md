@@ -81,16 +81,35 @@ As **ngshmmalign** is still under heavy development, we will not be making relea
 
     If you cannot execute a command, chances are that you are missing one of the more common utilities we require in addition to the tools listed above.
 
+### OS X
+We strongly recommend you use MacPorts (http://www.macports.org) to install dependencies. We also recommend you employ Clang from MacPorts, as it is the only OpenMP-capable compiler that is simultaneously ABI-compatible with installed libraries, such as boost. While building with GCC on OS X is possible, it requires an orthogonal toolchain which is far more involved and beyond the scope of this README.
+
+### GNU/Linux
+On a GNU/Linux system, the aforementioned recommendations are reversed. Most GNU/Linux distributions are built using GCC/libstdc++, which as of GCC 5.1 is not backwards compatible with Clang, and as such building with Clang produced object files will fail in the final linking step.
 
 ## Building
-If you have all dependencies satisfied, proceed by
-```
-./autogen.sh
-./configure
-make
-```
-You should now have a binary called `ngshmmalign` in the current build directory. You can either install this manually or call
-```
-make DESTDIR="${D}" install
-```
-where you specify the destination in `${D}`.
+1.  If you have all dependencies satisfied, proceed by generating the build system files
+    ```
+    ./autogen.sh
+    ```
+
+2.  Then, run the configure script. On GNU/Linux, you would do
+    ```
+    ./configure
+    ```
+    whereas on OS X, you would also need to specify the OpenMP-capable C++ compiler
+    ```
+    ./configure CXX=clang++-mp-3.7
+    ```
+	for instance, if you installed Clang 3.7 from MacPorts.
+
+3.  Then, compile the sources using
+    ```
+    make -j2
+    ```
+
+4.  You should now have a binary called `ngshmmalign` in the current build directory. You can either install this manually or call
+    ```
+    make DESTDIR="${D}" install
+    ```
+    where you specify the destination in `${D}`.
