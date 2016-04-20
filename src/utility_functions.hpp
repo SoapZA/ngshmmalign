@@ -33,8 +33,8 @@ inline bool AlmostEqualRelative(T A, T B, T maxRelDiff = 1E-8)
 {
 	// Calculate the difference.
 	T diff = std::fabs(A - B);
-	A = fabs(A);
-	B = fabs(B);
+	A = std::fabs(A);
+	B = std::fabs(B);
 	// Find the largest
 	T largest = std::max(A, B);
 
@@ -60,8 +60,8 @@ inline floating_point exp_base(floating_point argument) noexcept
 }
 
 // cast from floating point -> integral
-template <typename from_T, typename to_T>
-inline typename std::enable_if<std::is_floating_point<from_T>::value && std::is_integral<to_T>::value, to_T>::type type_caster(const from_T& from)
+template <typename from_T, typename to_T, typename std::enable_if<std::is_floating_point<from_T>::value && std::is_integral<to_T>::value, int>::type = 0>
+inline to_T type_caster(const from_T& from)
 {
 	if (from > 0)
 	{
@@ -74,22 +74,22 @@ inline typename std::enable_if<std::is_floating_point<from_T>::value && std::is_
 }
 
 // cast from integral -> floating point
-template <typename from_T, typename to_T>
-inline typename std::enable_if<std::is_integral<from_T>::value && std::is_floating_point<to_T>::value, to_T>::type type_caster(const from_T& from)
+template <typename from_T, typename to_T, typename std::enable_if<std::is_integral<from_T>::value && std::is_floating_point<to_T>::value, int>::type = 0>
+inline to_T type_caster(const from_T& from)
 {
 	return static_cast<to_T>(exp_base<to_T>(from));
 }
 
 // cast from floating point -> floating point
-template <typename from_T, typename to_T>
-inline typename std::enable_if<std::is_floating_point<from_T>::value && std::is_floating_point<to_T>::value, to_T>::type type_caster(const from_T& from)
+template <typename from_T, typename to_T, typename std::enable_if<std::is_floating_point<from_T>::value && std::is_floating_point<to_T>::value, int>::type = 0>
+inline to_T type_caster(const from_T& from)
 {
 	return static_cast<to_T>(from);
 }
 
 // cast from integral -> integral
-template <typename from_T, typename to_T>
-inline typename std::enable_if<std::is_integral<from_T>::value && std::is_integral<to_T>::value, to_T>::type type_caster(const from_T& from)
+template <typename from_T, typename to_T, typename std::enable_if<std::is_integral<from_T>::value && std::is_integral<to_T>::value, int>::type = 0>
+inline to_T type_caster(const from_T& from)
 {
 	return static_cast<to_T>(from);
 }
