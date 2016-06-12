@@ -342,7 +342,7 @@ void single_end_aligner<T>::load_parameters(
 		error_rates.right_clip_open = error_rates.left_clip_open / L;
 	}
 
-	if (m_min_mapped_length == MAGIC_NUMBER)
+	if (m_min_mapped_length == std::numeric_limits<decltype(m_min_mapped_length)>::max())
 	{
 		m_min_mapped_length = (L * 4) / 5;
 	}

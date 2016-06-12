@@ -56,7 +56,7 @@ int main(int argc, const char* argv[])
 	bool differentiate_match_state = false;
 
 	clip_mode read_clip_mode;
-	uint32_t min_mapped_length;
+	int32_t min_mapped_length;
 	uint64_t random_seed;
 
 	/* set up program options */
@@ -68,34 +68,34 @@ int main(int argc, const char* argv[])
 	// configuration options
 	boost::program_options::options_description config("Configuration");
 	config.add_options()
-		("ref,r", boost::program_options::value<std::string>(&profile_filename)->required(), "File containing the profile/MSA of the reference")
-		("out,o", boost::program_options::value<std::string>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
-		("wrong,w", boost::program_options::value<std::string>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
-		("nthreads,t", boost::program_options::value<int32_t>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
+		("ref,r", boost::program_options::value<decltype(profile_filename)>(&profile_filename)->required(), "File containing the profile/MSA of the reference")
+		("out,o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
+		("wrong,w", boost::program_options::value<decltype(rejects_filename)>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
+		("nthreads,t", boost::program_options::value<decltype(no_threads)>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
 		("unp", "Keep unpaired reads")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
-		("seed,s", boost::program_options::value<uint64_t>(&random_seed)->default_value(0), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
+		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(0), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
 		("soft", "Soft-clip reads. Clipped bases will still be in the sequence in the alignment")
 		("HARD", "Extreme Hard-clip reads. Do not write hard-clip in CIGAR, as if the hard-clipped bases never existed. Mutually exclusive with previous option")
 		("verbose,v", "Show progress indicator while aligning")
-		("ambig,a", boost::program_options::value<double>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
-		("minLen,M", boost::program_options::value<uint32_t>(&min_mapped_length)->default_value(MAGIC_NUMBER, "L * 0.8"), "Minimum mapped length of read")
+		("ambig,a", boost::program_options::value<decltype(params.low_frequency_cutoff)>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
+		("minLen,M", boost::program_options::value<decltype(min_mapped_length)>(&min_mapped_length)->default_value(std::numeric_limits<decltype(min_mapped_length)>::max(), "L * 0.8"), "Minimum mapped length of read")
 
-		("error", boost::program_options::value<double>(&params.error_rate)->default_value(0.005, "0.005"), "Global substitution probability")
-		("go", boost::program_options::value<double>(&params.gap_open)->default_value(1e-4, "1e-4"), "Gap open probability")
-		("ge", boost::program_options::value<double>(&params.gap_extend)->default_value(0.30, "0.30"), "Gap extend probability")
+		("error", boost::program_options::value<decltype(params.error_rate)>(&params.error_rate)->default_value(0.005, "0.005"), "Global substitution probability")
+		("go", boost::program_options::value<decltype(params.gap_open)>(&params.gap_open)->default_value(1e-4, "1e-4"), "Gap open probability")
+		("ge", boost::program_options::value<decltype(params.gap_extend)>(&params.gap_extend)->default_value(0.30, "0.30"), "Gap extend probability")
 
-		("io", boost::program_options::value<double>(&params.insert_open)->default_value(5e-5, "5e-5"), "Insert open probability")
-		("ie", boost::program_options::value<double>(&params.insert_extend)->default_value(0.50, "0.50"), "Insert extend probability")
+		("io", boost::program_options::value<decltype(params.insert_open)>(&params.insert_open)->default_value(5e-5, "5e-5"), "Insert open probability")
+		("ie", boost::program_options::value<decltype(params.insert_extend)>(&params.insert_extend)->default_value(0.50, "0.50"), "Insert extend probability")
 
-		("ep", boost::program_options::value<double>(&params.end_prob)->default_value(MAGIC_NUMBER, "1/L"), "Jump to end probability; usually 1/L, where L is the average length of the reads")
+		("ep", boost::program_options::value<decltype(params.end_prob)>(&params.end_prob)->default_value(MAGIC_NUMBER, "1/L"), "Jump to end probability; usually 1/L, where L is the average length of the reads")
 
-		("lco", boost::program_options::value<double>(&params.left_clip_open)->default_value(0.10, "0.10"), "Left clip open probability")
-		("lce", boost::program_options::value<double>(&params.left_clip_extend)->default_value(0.90, "0.90"), "Left clip extend probability")
+		("lco", boost::program_options::value<decltype(params.left_clip_open)>(&params.left_clip_open)->default_value(0.10, "0.10"), "Left clip open probability")
+		("lce", boost::program_options::value<decltype(params.left_clip_extend)>(&params.left_clip_extend)->default_value(0.90, "0.90"), "Left clip extend probability")
 
-		("rco", boost::program_options::value<double>(&params.right_clip_open)->default_value(MAGIC_NUMBER, "lco/L"), "Right clip open probability")
-		("rce", boost::program_options::value<double>(&params.right_clip_extend)->default_value(0.90, "0.90"), "Right clip extend probability");
+		("rco", boost::program_options::value<decltype(params.right_clip_open)>(&params.right_clip_open)->default_value(MAGIC_NUMBER, "lco/L"), "Right clip open probability")
+		("rce", boost::program_options::value<decltype(params.right_clip_extend)>(&params.right_clip_extend)->default_value(0.90, "0.90"), "Right clip extend probability");
 
 	// hidden options, i.e., input files
 	boost::program_options::options_description hidden("Hidden options");
@@ -138,6 +138,7 @@ int main(int argc, const char* argv[])
 		return EXIT_FAILURE;
 	}
 
+	/* 0.1) assign parameter values */
 	write_unpaired = global_options.count("unp");
 	exhaustive = global_options.count("-E");
 	verbose = global_options.count("verbose");
@@ -149,6 +150,12 @@ int main(int argc, const char* argv[])
 	}
 	read_clip_mode = (global_options.count("soft") ? clip_mode::soft : (global_options.count("HARD") ? clip_mode::HARD : clip_mode::hard));
 	differentiate_match_state = global_options.count("-X");
+
+	if (min_mapped_length <= 0)
+	{
+		std::cerr << "ERROR: -M has to be strictly positive.\n";
+		return EXIT_FAILURE;
+	}
 
 	input_files = global_options["input-files"].as<std::vector<std::string>>();
 
@@ -171,7 +178,7 @@ int main(int argc, const char* argv[])
 		return EXIT_FAILURE;
 	}
 
-	/* 0.1) create HMM aligner object */
+	/* 0.2) create HMM aligner object */
 	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(write_unpaired, input_files, min_mapped_length, argc, argv);
 
 	/* 1) load reads */

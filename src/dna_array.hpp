@@ -154,6 +154,9 @@ inline typename dna_array<T, N>::const_reference dna_array<T, N>::operator[](cha
 			}
 			break;
 	}
+
+	// added dead code return path here, to silence ICC
+	return m_array[static_cast<size_type>(0)];
 }
 
 template <typename T, std::size_t N>
