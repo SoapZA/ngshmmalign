@@ -25,7 +25,7 @@ AC_MSG_RESULT([${enable_flags_setting}])
 AX_CHECK_ENABLE_DEBUG
 AS_IF([test "x${enable_debug}" = "xno"],
 	[
-		cxxflags_test="-O3"
+		cxxflags_test="-march=native -ffast-math -pedantic -O3"
 		cppflags_test=""
 
 		AC_CANONICAL_HOST
@@ -80,7 +80,7 @@ AS_IF([test "x${enable_flags_setting}" = "xyes" && test "x${enable_debug}" = "xn
 dnl ===============
 dnl Check for C++11
 dnl ===============
-AX_CXX_COMPILE_STDCXX_11([], [mandatory])
+AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
 
 
 
@@ -91,6 +91,7 @@ AX_BOOST_BASE([1.50], [], [AC_MSG_ERROR([could not find a suitable boost install
 AX_BOOST_SYSTEM
 AX_BOOST_PROGRAM_OPTIONS
 AX_BOOST_FILESYSTEM
+AX_BOOST_IOSTREAMS
 
 
 

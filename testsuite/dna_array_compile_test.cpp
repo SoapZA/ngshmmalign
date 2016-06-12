@@ -4,8 +4,6 @@
 #include <dna_array.hpp>
 #include <utility_functions.hpp>
 
-const int col_width = 8;
-
 int main()
 {
 	dna_array<double, 5> arr_double = { 1.0, 2.0, 3.0, 4.0 };

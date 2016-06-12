@@ -1,168 +1,96 @@
-#ifndef PARAMETER_PACK_HPP
-#define PARAMETER_PACK_HPP
+#ifndef REFERENCE_IMPL_HPP
+#define REFERENCE_IMPL_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
- * 	
+ *
  * This file is part of ngshmmalign
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <cassert>
-#include <algorithm>
+#include <cstdlib>
 #include <clocale>
-#include <cmath>
-#include <cstring>
-#include <exception>
-#include <iomanip>
+#include <fstream>
 #include <iostream>
+#include <map>
+#include <memory>
+#include <random>
+#include <sstream>
 #include <string>
-#include <type_traits>
-#include <typeinfo>
+#include <tuple>
+#include <utility>
 #include <vector>
 
-#include "utility_functions.hpp"
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
+
 #include "dna_array.hpp"
+#include "fasta.hpp"
 
-template <typename T>
-struct background_rates
+namespace
 {
-	// substitution rate of sequencing process
-	T error_rate;
-	// M->D:
-	T gap_open;
-	// D->D:
-	T gap_extend;
-	// M->I:
-	T insert_open;
-	// I->I:
-	T insert_extend;
-	// M->End:
-	T end_prob;
 
-	// Begin->S_L:
-	T left_clip_open;
-	// S_L->S_L:
-	T left_clip_extend;
-	// M->S_R:
-	T right_clip_open;
-	// S_R->S_R:
-	T right_clip_extend;
+reference_haplotype::reference_haplotype(const std::string& id, std::string&& seq) noexcept : sequence(std::move(seq))
+{
+	std::vector<std::string> split_vec;
+	boost::split(split_vec, id, boost::is_any_of("_"), boost::token_compress_on);
 
-	// output
-	friend std::ostream& operator<<(std::ostream& output, const background_rates& bg_rates) noexcept
+	if (split_vec.size() == 1)
 	{
-		return output << std::setprecision(2)
-					  << "\tError rate:              " << bg_rates.error_rate << '\n'
-					  << "\tGap open:                " << bg_rates.gap_open << '\n'
-					  << "\tGap extend:              " << bg_rates.gap_extend << '\n'
-					  << "\tInsert open:             " << bg_rates.insert_open << '\n'
-					  << "\tInsert extend:           " << bg_rates.insert_extend << '\n'
-					  << "\tEnd prob:                " << bg_rates.end_prob << '\n'
-					  << "\tLeft clip open:          " << bg_rates.left_clip_open << '\n'
-					  << "\tLeft clip extend:        " << bg_rates.left_clip_extend << '\n'
-					  << "\tRight clip open:         " << bg_rates.right_clip_open << '\n'
-					  << "\tRight clip extend:       " << bg_rates.right_clip_extend << '\n';
+		count = 1;
 	}
-};
-
-template <typename T>
-struct parameter_pack
-{
-	/* length of HMM */
-	std::size_t m_L;
-
-	/* clip transition probabilities */
-	// left-clip
-	struct into_left_clip_struct
+	else
 	{
-		T from_begin;
-		T from_left_clip;
-	} m_into_left_clip;
+		try
+		{
+			count = boost::lexical_cast<double>(split_vec[1]);
+		}
+		catch (boost::bad_lexical_cast&)
+		{
+			std::cerr << "ERROR: Count argument '" << split_vec[1] << "' is not an integral/floating point value! Aborting.\n";
+			exit(EXIT_FAILURE);
+		}
+	}
 
-	// right-clip
-	struct into_right_clip_struct
+	name = std::move(split_vec[0]);
+
+	// find start
+	start = 0;
+	while (sequence[start] == '-')
 	{
-		T from_match;
-		T from_right_clip;
-	} m_into_right_clip;
-
-	/* HMM transition probabilities */
-	// complete transition probabilities
-	template <typename U>
-	struct trans_matrix
-	{
-		// match transition probabilities
-		struct into_match_struct
-		{
-			U from_begin;
-			U from_left_clip;
-			U from_match;
-			U from_insertion;
-			U from_deletion;
-		} into_match;
-
-		// insertion transition probabilities
-		struct into_insertion_struct
-		{
-			U from_match;
-			U from_insertion;
-		} into_insertion;
-
-		// deletion transition probabilities
-		struct into_deletion_struct
-		{
-			U from_match;
-			U from_deletion;
-		} into_deletion;
+		++start;
 	};
-	std::vector<trans_matrix<T>> m_trans_matrix;
 
-	/* terminal transition probabilities */
-	struct into_end_struct
+	// find end
+	end = sequence.length() - 1;
+	while (sequence[end] == '-')
 	{
-		T from_right_clip;
-		T from_match;
-		T from_last_match;
-	} m_into_end;
+		--end;
+	};
+	++end;
+}
 
-	/* emission probabilities */
-	std::vector<dna_array<T, 5>> m_E;
-	dna_array<T, 2> m_uniform_base_e;
-
-	parameter_pack() = default;
-
-	// conversion constructors
-	template <typename V>
-	parameter_pack(const parameter_pack<V>&);
-
-	template <typename V>
-	void set_parameters(
-		const std::vector<dna_array<V, 5>>& allel_freq_,
-		const std::vector<V>& vec_M_to_D_p_,
-		const std::vector<V>& vec_D_to_D_p_,
-		const background_rates<V>& error_rates);
-
-	bool display_parameters(bool fail_on_non_summation = true);
-};
-
+// Ctor
 template <typename T>
 template <typename V>
-parameter_pack<T>::parameter_pack(const parameter_pack<V>& v)
+reference_genome<T>::reference_genome(const reference_genome<V>& v)
 {
+	using V_ref_type = typename reference_genome<V>::template trans_matrix<V>;
+	using T_ref_type = typename reference_genome<T>::template trans_matrix<T>;
+
 	T(*cast)
 	(const V&) = type_caster<V, T>;
 
@@ -183,7 +111,7 @@ parameter_pack<T>::parameter_pack(const parameter_pack<V>& v)
 		v.m_trans_matrix.begin(),
 		v.m_trans_matrix.end(),
 		this->m_trans_matrix.begin(),
-		[cast](const typename parameter_pack<V>::template trans_matrix<V>& i) -> typename parameter_pack<T>::template trans_matrix<T>
+		[cast](const V_ref_type& i) -> T_ref_type
 		{
 			return {
 				{ cast(i.into_match.from_begin),
@@ -209,20 +137,19 @@ parameter_pack<T>::parameter_pack(const parameter_pack<V>& v)
 	std::copy(v.m_E.begin(), v.m_E.end(), this->m_E.begin());
 
 	this->m_uniform_base_e = v.m_uniform_base_e;
+	this->m_table_of_included_bases = v.m_table_of_included_bases;
 }
 
+// Setter
 template <typename T>
-template <typename V>
-void parameter_pack<T>::set_parameters(
-	const std::vector<dna_array<V, 5>>& allel_freq_,
-	const std::vector<V>& vec_M_to_D_p_,
-	const std::vector<V>& vec_D_to_D_p_,
-	const background_rates<V>& error_rates)
+void reference_genome<T>::set_parameters(
+	const std::vector<dna_array<double, 5>>& allel_freq_,
+	const std::vector<double>& vec_M_to_D_p_,
+	const std::vector<double>& vec_D_to_D_p_,
+	const background_rates& error_rates)
 {
-	static_assert(std::is_floating_point<V>::value, "V needs to be a floating point type!\n");
-
 	T(*cast)
-	(const V&) = type_caster<V, T>;
+	(const double&) = type_caster<double, T>;
 
 	/* length of HMM */
 	m_L = allel_freq_.size();
@@ -253,7 +180,7 @@ void parameter_pack<T>::set_parameters(
 		std::terminate();
 	}
 
-	std::vector<trans_matrix<V>> float_trans_matrix(m_L);
+	std::vector<trans_matrix<double>> float_trans_matrix(m_L);
 	/* Position 0 in pHMM */
 	// -> M transitions
 	float_trans_matrix[0].into_match = {
@@ -275,9 +202,9 @@ void parameter_pack<T>::set_parameters(
 	};
 
 	/* Position 1 in pHMM */
-	V cur_M_to_D = (vec_M_to_D_p_[0] ? vec_M_to_D_p_[0] : error_rates.gap_open);
-	V sum = error_rates.insert_open + cur_M_to_D + error_rates.right_clip_open + error_rates.end_prob;
-	V M_to_M = 1.0 - sum;
+	double cur_M_to_D = (vec_M_to_D_p_[0] ? vec_M_to_D_p_[0] : error_rates.gap_open);
+	double sum = error_rates.insert_open + cur_M_to_D + error_rates.right_clip_open + error_rates.end_prob;
+	double M_to_M = 1.0 - sum;
 	assert(M_to_M > 0);
 	// -> M transitions
 	float_trans_matrix[1].into_match = {
@@ -298,8 +225,8 @@ void parameter_pack<T>::set_parameters(
 		0.0
 	};
 
-	V cur_D_to_D;
-	for (typename std::vector<trans_matrix<V>>::size_type i = 2; i < m_L - 1; ++i)
+	double cur_D_to_D;
+	for (typename std::vector<trans_matrix<double>>::size_type i = 2; i < m_L - 1; ++i)
 	{
 		cur_M_to_D = (vec_M_to_D_p_[i - 1] ? vec_M_to_D_p_[i - 1] : error_rates.gap_open);
 
@@ -357,7 +284,7 @@ void parameter_pack<T>::set_parameters(
 
 	/* copy contents back into member transition matrix */
 	m_trans_matrix.resize(m_L);
-	for (typename std::vector<trans_matrix<V>>::size_type i = 0; i < m_L; ++i)
+	for (typename std::vector<trans_matrix<double>>::size_type i = 0; i < m_L; ++i)
 	{
 		m_trans_matrix[i] = {
 			{ cast(float_trans_matrix[i].into_match.from_begin),
@@ -378,8 +305,10 @@ void parameter_pack<T>::set_parameters(
 
 	// set position-specific emission matrix
 	m_E.resize(m_L);
-	V temp;
-	for (typename std::vector<dna_array<V, 5>>::size_type i = 0; i < m_L; ++i)
+	m_table_of_included_bases.resize(m_L);
+
+	double temp;
+	for (typename std::vector<dna_array<double, 5>>::size_type i = 0; i < m_L; ++i)
 	{
 		for (char j : { 'A', 'C', 'G', 'T' })
 		{
@@ -389,77 +318,288 @@ void parameter_pack<T>::set_parameters(
 				temp += allel_freq_[i][k] * (j == k ? 1 - error_rates.error_rate : error_rates.error_rate / 3);
 			}
 			m_E[i][j] = static_cast<T>(log_base(temp));
+
+			m_table_of_included_bases[i][j] = (allel_freq_[i][j] > error_rates.low_frequency_cutoff);
 		}
+
 		m_E[i]['N'] = static_cast<T>(log_base(1.0));
+		m_table_of_included_bases[i]['N'] = true;
 	}
 }
 
-template <typename V, typename std::enable_if<std::is_floating_point<V>::value, int>::type = 0>
-void inline print_sum(V v, bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
+template <typename T>
+void reference_genome<T>::set_parameters(
+	const std::string& input_msa,
+	const background_rates& error_rates,
+	const uint32_t read_lengths)
 {
-	std::cout
-		<< prefix << std::right << std::setw(30 - strlen(prefix)) << v << suffix;
-	if ((std::fabs(v - 1.0) > 1E-8) && (fail_on_non_summation))
+	read_length_profile = read_lengths;
+	set_parameters(fasta_read<reference_haplotype>(input_msa), error_rates);
+}
+
+template <typename T>
+void reference_genome<T>::set_parameters(
+	const std::vector<reference_haplotype>& refs,
+	const background_rates& error_rates)
+{
+	std::size_t L = refs[0].sequence.length();
+	const std::vector<reference_haplotype>::size_type num_haps = refs.size();
+
+	std::vector<dna_array<double, 5>> E_p(L, { 0.0, 0.0, 0.0, 0.0, 0.0 });
+	std::vector<double> M_D_p(L - 1, 0);
+	std::vector<double> D_D_p(L - 1, 0);
+
+	// 1.) check that all haplotypes have the same length
+	for (std::vector<reference_haplotype>::size_type i = 1; i < num_haps; ++i)
 	{
+		if (refs[i].sequence.length() != L)
+		{
+			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' does not have length L = " << L << "! Aborting.\n";
+			exit(EXIT_FAILURE);
+		}
+
+		if (refs[i].count <= 0)
+		{
+			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' has non-positive count " << refs[i].count << "! Aborting.\n";
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	// 2.) check that all haplotypes have proper DNA letters
+	char cur_base;
+	for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
+	{
+		for (std::string::size_type j = 0; j < L; ++j)
+		{
+			cur_base = refs[i].sequence[j];
+			if ((wobble_to_ambig_bases.find(cur_base) == wobble_to_ambig_bases.end()) && (cur_base != '-'))
+			{
+				std::cerr << "ERROR: Unknown base '" << cur_base << "' at position '" << j << "' of '" << refs[i].name << "'.\n";
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+
+	// 3.) start producing emission and transition tables
+	double sum;
+	double MD, sumM;
+	double DD, sumD;
+	bool onlyGap;
+
+	std::string majority_bases;
+	double max_freq;
+	std::default_random_engine rng;
+	char majority_base;
+
+	std::string ambig_bases;
+
+	for (std::string::size_type j = 0; j < L; ++j)
+	{
+		sum = 0;
+
+		MD = 0;
+		sumM = 0;
+		DD = 0;
+		sumD = 0;
+
+		onlyGap = true;
+
+		// first loop
+		for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
+		{
+			if ((refs[i].start <= j) && (j < refs[i].end))
+			{
+				cur_base = refs[i].sequence[j];
+				onlyGap &= (cur_base == '-');
+
+				// allele frequencies
+				if (cur_base != '-')
+				{
+					sum += refs[i].count;
+
+					const std::string& bases = wobble_to_ambig_bases.find(cur_base)->second;
+					const uint8_t num_chars = bases.length();
+					for (auto k : bases)
+					{
+						E_p[j][k] += refs[i].count / num_chars;
+					}
+				}
+
+				// transition tables
+				if (j < L - 1)
+				{
+					if (cur_base == '-')
+					{
+						// D->
+						sumD += refs[i].count;
+						if (refs[i].sequence[j + 1] == '-')
+						{
+							// ->D
+							DD += refs[i].count;
+						}
+					}
+					else
+					{
+						// M->
+						sumM += refs[i].count;
+						if (refs[i].sequence[j + 1] == '-')
+						{
+							// ->D
+							MD += refs[i].count;
+						}
+					}
+				}
+			}
+		}
+
+		if (onlyGap)
+		{
+			std::cerr << "ERROR: Position '" << j << "' only has gaps.\n";
+			exit(EXIT_FAILURE);
+		}
+
+		majority_bases.clear();
+		max_freq = -1;
+		ambig_bases.clear();
+		// renormalize counts
+		for (char k : { 'A', 'C', 'G', 'T' })
+		{
+			E_p[j][k] /= sum;
+
+			// find the majority base
+			if (E_p[j][k] >= max_freq)
+			{
+				if (E_p[j][k] > max_freq)
+				{
+					majority_bases.clear();
+					max_freq = E_p[j][k];
+				}
+
+				majority_bases.push_back(k);
+			}
+
+			// find ambiguous base
+			if (E_p[j][k] >= error_rates.low_frequency_cutoff)
+			{
+				ambig_bases.push_back(k);
+			}
+		}
+
+		majority_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
+		m_majority_ref.push_back(majority_base);
+
+		m_ambig_ref.push_back(ambig_to_wobble_base.find(ambig_bases)->second);
+
+		if (j < L - 1)
+		{
+			M_D_p[j] = MD / (sumM ? sumM : 1);
+			D_D_p[j] = DD / (sumD ? sumD : 1);
+		}
+	}
+
+	if (num_haps > 1)
+	{
+		// provided an MSA
+		std::ofstream output;
+		output.open("ref_majority.fasta");
+		output << ">CONSENSUS" << '\n' << m_majority_ref << '\n';
+		output.close();
+
+		output.open("ref_ambig.fasta");
+		output << ">CONSENSUS" << '\n' << m_ambig_ref << '\n';
+		output.close();
+
+		m_reference_genome_name = "CONSENSUS";
+	}
+	else
+	{
+		// provided only one sequence, do not write a consensus sequence
+		m_reference_genome_name = refs.front().name;
+	}
+
+#ifndef NDEBUG
+	std::ofstream debug_output("DEBUG_emissions.log");
+	for (std::string::size_type i = 0; i < L; ++i)
+	{
+		debug_output << "Pos " << i << ":\n" << E_p[i] << '\n';
+	}
+	debug_output.close();
+#endif
+
+	set_parameters(E_p, M_D_p, D_D_p, error_rates);
+
+	std::cout << '\t' << "Size of genome:          " << m_L << " nt\n\n";
+	create_index();
+}
+
+// Misc
+template <typename V, typename std::enable_if<std::is_floating_point<V>::value, int>::type = 0>
+void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
+{
+	std::cout << prefix << std::right << std::setw(30 - strlen(prefix)) << v << suffix;
+	V diff = std::fabs(v - 1.0);
+	if ((diff > 1E-4) && (fail_on_non_summation))
+	{
+		std::cerr << std::setprecision(12) << "Failed sum: " << diff << '\n';
 		std::terminate();
 	}
 }
 
 template <typename V, typename std::enable_if<std::is_integral<V>::value, int>::type = 0>
-void inline print_sum(V v, bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
+void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
 {
 }
 
 template <typename T>
-bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
+bool reference_genome<T>::display_parameters(std::ostream& output, const bool fail_on_non_summation) const
 {
 	std::setlocale(LC_ALL, "en_US.UTF-8");
-	std::cout
+	output
 		<< std::setprecision(3) << std::fixed;
-	std::cout
+	output
 		<< "HMM Transition tables for <" << typeid(m_trans_matrix[0].into_match.from_left_clip).name() << ">:\n";
 
-	const int tr_col_width = 8;
-	const int value_col_width = 9;
+	constexpr int tr_col_width = 8;
+	constexpr int value_col_width = 9;
 
 	/* BEGIN */
-	std::cout
+	output
 		<< std::left << std::setw(tr_col_width) << "BEG"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_L" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_begin << '\n';
-	std::cout
+	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "M_j" << ':'
 		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_begin << '\n';
-	print_sum<T>(m_into_left_clip.from_begin + m_L * m_trans_matrix[0].into_match.from_begin, fail_on_non_summation, "\n", "Sum:");
+	print_sum<T>(output, m_into_left_clip.from_begin + m_L * m_trans_matrix[0].into_match.from_begin, fail_on_non_summation, "\n", "Sum:");
 
 	/* LEFT CLIP */
-	std::cout
+	output
 		<< "\n\n"
 		<< std::left << std::setw(tr_col_width) << "S_L"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_L" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_left_clip << '\n';
-	std::cout
+	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "M_j" << ':'
 		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_left_clip << '\n';
-	print_sum<T>(m_into_left_clip.from_left_clip + m_L * m_trans_matrix[0].into_match.from_left_clip, fail_on_non_summation, "\n", "Sum:");
+	print_sum<T>(output, m_into_left_clip.from_left_clip + m_L * m_trans_matrix[0].into_match.from_left_clip, fail_on_non_summation, "\n", "Sum:");
 
 	/* MAIN STATES */
 	for (typename std::vector<trans_matrix<T>>::size_type i = 0; i < m_L - 1; ++i)
 	{
 		// first row
-		std::cout
+		output
 			<< "\n\n"
 			<< std::left << "M_" << std::setw(tr_col_width - 2) << i
 			<< u8"\u2500\u252C\u2500> "
 			<< std::left << "M_" << std::setw(5) << i + 1 << ':'
 			<< std::right << std::setw(value_col_width) << m_trans_matrix[i + 1].into_match.from_match;
-		std::cout
+		output
 			<< std::string(2 * tr_col_width, ' ')
 			<< std::left << "I_" << std::setw(tr_col_width - 2) << i
 			<< u8"\u2500\u252C\u2500> "
@@ -468,7 +608,7 @@ bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
 
 		if (i != 0)
 		{
-			std::cout
+			output
 				<< std::string(2 * tr_col_width, ' ')
 				<< std::left << "D_" << std::setw(tr_col_width - 2) << i
 				<< u8"\u2500\u252C\u2500> "
@@ -477,13 +617,13 @@ bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
 		}
 
 		// second row
-		std::cout
+		output
 			<< '\n'
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
 			<< std::left << "D_" << std::setw(5) << i + 1 << ':'
 			<< std::right << std::setw(value_col_width) << m_trans_matrix[i + 1].into_deletion.from_match;
-		std::cout
+		output
 			<< std::string(2 * tr_col_width, ' ')
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u2514\u2500> "
@@ -492,7 +632,7 @@ bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
 
 		if (i != 0)
 		{
-			std::cout
+			output
 				<< std::string(2 * tr_col_width, ' ')
 				<< std::left << std::string(tr_col_width, ' ')
 				<< u8" \u2514\u2500> "
@@ -501,7 +641,7 @@ bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
 		}
 
 		// third row
-		std::cout
+		output
 			<< '\n'
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
@@ -509,73 +649,74 @@ bool parameter_pack<T>::display_parameters(bool fail_on_non_summation)
 			<< std::right << std::setw(value_col_width) << m_trans_matrix[i].into_insertion.from_match << '\n';
 
 		// fourth row
-		std::cout
+		output
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
 			<< std::left << std::setw(5 + 2) << "S_R" << ':'
 			<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << '\n';
 
 		// fifth row
-		std::cout
+		output
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u2514\u2500> "
 			<< std::left << std::setw(5 + 2) << "END" << ':'
 			<< std::right << std::setw(value_col_width) << m_into_end.from_match << '\n';
 
-		print_sum<T>(
+		print_sum<T>(output,
 			m_trans_matrix[i + 1].into_match.from_match + m_trans_matrix[i + 1].into_deletion.from_match + m_trans_matrix[i].into_insertion.from_match + m_into_right_clip.from_match + m_into_end.from_match,
 			fail_on_non_summation, "", "Sum:");
 
-		std::cout << std::string(2 * tr_col_width, ' ');
-		print_sum<T>(
+		output << std::string(2 * tr_col_width, ' ');
+		print_sum<T>(output,
 			m_trans_matrix[i + 1].into_match.from_insertion + m_trans_matrix[i].into_insertion.from_insertion,
 			fail_on_non_summation);
 		if (i != 0)
 		{
-			std::cout << std::string(2 * tr_col_width, ' ');
-			print_sum<T>(
+			output << std::string(2 * tr_col_width, ' ');
+			print_sum<T>(output,
 				m_trans_matrix[i + 1].into_match.from_deletion + m_trans_matrix[i + 1].into_deletion.from_deletion,
 				fail_on_non_summation, "\n");
 		}
 	}
 
 	/* LAST MATCH STATE */
-	std::cout
+	output
 		<< "\n\n"
 		<< std::left << "M_" << std::setw(tr_col_width - 2) << m_L - 1
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_R" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << "\n";
-	std::cout
+	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "END" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_end.from_last_match << '\n';
-	print_sum<T>(m_into_right_clip.from_match + m_into_end.from_last_match, fail_on_non_summation, "\n", "Sum:");
+	print_sum<T>(output, m_into_right_clip.from_match + m_into_end.from_last_match, fail_on_non_summation, "\n", "Sum:");
 
 	/* RIGHT CLIP */
-	std::cout
+	output
 		<< "\n\n"
 		<< std::left << std::setw(tr_col_width) << "S_R"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_R" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_right_clip << '\n';
-	std::cout
+	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "END" << ':'
 		<< std::right << std::setw(value_col_width) << m_into_end.from_right_clip << '\n';
-	print_sum<T>(m_into_right_clip.from_right_clip + m_into_end.from_right_clip, fail_on_non_summation, "\n", "Sum:");
+	print_sum<T>(output, m_into_right_clip.from_right_clip + m_into_end.from_right_clip, fail_on_non_summation, "\n", "Sum:");
 
 	int j = 0;
-	std::cout << "\nEmission tables (log):\n";
+	output << "\nEmission tables (log):\n";
 	for (const auto& i : m_E)
 	{
-		std::cout << j++ << ":\t" << i;
+		output << j++ << ":\t" << i;
 	}
-	std::cout << "\nEmission tables (uniform):\n\t" << m_uniform_base_e;
+	output << "\nEmission tables (uniform):\n\t" << m_uniform_base_e;
 
 	return true;
 }
+}
 
-#endif /* PARAMETER_PACK_HPP */
+#endif /* REFERENCE_IMPL_HPP */

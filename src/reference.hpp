@@ -3,19 +3,19 @@
 
 /*
  * Copyright (c) 2016 David Seifert
- * 	
+ *
  * This file is part of ngshmmalign
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -35,26 +35,58 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/utility/string_ref.hpp>
+#include <boost/functional/hash.hpp>
+#include <boost/unordered_map.hpp>
 
+#include "utility_functions.hpp"
 #include "dna_array.hpp"
 
-const std::map<const std::string, const char> ambig_to_wobble_base = {
-	{ "", 'N' },
-	{ "A", 'A' },
-	{ "C", 'C' },
-	{ "G", 'G' },
-	{ "T", 'T' },
-	{ "AC", 'M' },
-	{ "AG", 'R' },
-	{ "AT", 'W' },
-	{ "CG", 'S' },
-	{ "CT", 'Y' },
-	{ "GT", 'K' },
-	{ "ACG", 'V' },
-	{ "ACT", 'H' },
-	{ "AGT", 'D' },
-	{ "CGT", 'B' },
-	{ "ACGT", 'N' }
+namespace
+{
+
+struct background_rates
+{
+	// frequency cutoff for considering a base part of the reference genome
+	double low_frequency_cutoff;
+	// substitution rate of sequencing process
+	double error_rate;
+	// M->D:
+	double gap_open;
+	// D->D:
+	double gap_extend;
+	// M->I:
+	double insert_open;
+	// I->I:
+	double insert_extend;
+	// M->End:
+	double end_prob;
+
+	// Begin->S_L:
+	double left_clip_open;
+	// S_L->S_L:
+	double left_clip_extend;
+	// M->S_R:
+	double right_clip_open;
+	// S_R->S_R:
+	double right_clip_extend;
+
+	// output
+	friend std::ostream& operator<<(std::ostream& output, const background_rates& bg_rates) noexcept
+	{
+		return output << std::setprecision(2)
+					  << "\tLower frequency cutoff:  " << bg_rates.low_frequency_cutoff << '\n'
+					  << "\tError rate:              " << bg_rates.error_rate << '\n'
+					  << "\tGap open:                " << bg_rates.gap_open << '\n'
+					  << "\tGap extend:              " << bg_rates.gap_extend << '\n'
+					  << "\tInsert open:             " << bg_rates.insert_open << '\n'
+					  << "\tInsert extend:           " << bg_rates.insert_extend << '\n'
+					  << "\tEnd prob:                " << bg_rates.end_prob << '\n'
+					  << "\tLeft clip open:          " << bg_rates.left_clip_open << '\n'
+					  << "\tLeft clip extend:        " << bg_rates.left_clip_extend << '\n'
+					  << "\tRight clip open:         " << bg_rates.right_clip_open << '\n'
+					  << "\tRight clip extend:       " << bg_rates.right_clip_extend << '\n';
+	}
 };
 
 struct reference_haplotype
@@ -68,219 +100,147 @@ struct reference_haplotype
 	std::string::size_type end;
 	double count;
 
-	reference_haplotype(const std::string& id, std::string&& seq) noexcept : sequence(std::move(seq))
+	reference_haplotype(const std::string& id, std::string&& seq) noexcept;
+};
+
+struct boost_string_ref_hash
+{
+	inline std::size_t operator()(const boost::string_ref& str_ref) const
 	{
-		std::vector<std::string> split_vec;
-		boost::split(split_vec, id, boost::is_any_of("_"), boost::token_compress_on);
-
-		if (split_vec.size() == 1)
-		{
-			count = 1;
-		}
-		else
-		{
-			try
-			{
-				count = boost::lexical_cast<double>(split_vec[1]);
-			}
-			catch (boost::bad_lexical_cast&)
-			{
-				std::cerr << "ERROR: Count argument '" << split_vec[1] << "' is not an integral/floating point value! Aborting.\n";
-				exit(EXIT_FAILURE);
-			}
-		}
-
-		name = std::move(split_vec[0]);
-
-		// find start
-		start = 0;
-		while (sequence[start] == '-')
-		{
-			++start;
-		};
-
-		// find end
-		end = sequence.length() - 1;
-		while (sequence[end] == '-')
-		{
-			--end;
-		};
-		++end;
+		return boost::hash_range(str_ref.begin(), str_ref.end());
 	}
 };
 
-std::tuple<std::vector<dna_array<double, 5>>, std::vector<double>, std::vector<double>> build_parameters_from_msa(const std::vector<reference_haplotype>& refs, double ambig_threshold)
+struct boost_string_ref_equal_to
 {
-	const std::string::size_type L = refs[0].sequence.length();
-	const std::vector<reference_haplotype>::size_type num_haps = refs.size();
-
-	std::tuple<std::vector<dna_array<double, 5>>, std::vector<double>, std::vector<double>> result = std::make_tuple(
-		std::vector<dna_array<double, 5>>(L, { 0.0, 0.0, 0.0, 0.0, 0.0 }),
-		std::vector<double>(L - 1, 0),
-		std::vector<double>(L - 1, 0));
-	std::vector<dna_array<double, 5>>& E_p = std::get<0>(result);
-	std::vector<double>& M_D_p = std::get<1>(result);
-	std::vector<double>& D_D_p = std::get<2>(result);
-
-	// 1.) check that all haplotypes have the same length
-	for (std::vector<reference_haplotype>::size_type i = 1; i < num_haps; ++i)
+	inline bool operator()(const boost::string_ref& str_ref1, const boost::string_ref& str_ref2) const
 	{
-		if (refs[i].sequence.length() != L)
-		{
-			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' does not have length L = " << L << "! Aborting.\n";
-			exit(EXIT_FAILURE);
-		}
-
-		if (refs[i].count <= 0)
-		{
-			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' has non-positive count " << refs[i].count << "! Aborting.\n";
-			exit(EXIT_FAILURE);
-		}
+		return str_ref1 == str_ref2;
 	}
+};
 
-	// 2.) check that all haplotypes have proper DNA letters
-	char cur_base;
-	for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
+template <typename T>
+struct reference_genome
+{
+	/* length of HMM */
+	std::size_t m_L;
+
+	/* clip transition probabilities */
+	// left-clip
+	struct into_left_clip_struct
 	{
-		for (std::string::size_type j = 0; j < L; ++j)
-		{
-			cur_base = refs[i].sequence[j];
-			if ((cur_base != 'A') && (cur_base != 'C') && (cur_base != 'G') && (cur_base != 'T') && (cur_base != '-'))
-			{
-				std::cerr << "ERROR: Unknown base '" << cur_base << "' at position '" << j << "' of '" << refs[i].name << "'.\n";
-				exit(EXIT_FAILURE);
-			}
-		}
-	}
+		T from_begin;
+		T from_left_clip;
+	} m_into_left_clip;
 
-	// 3.) start producing emission and transition tables
-	double sum;
-	double MD, sumM;
-	double DD, sumD;
-	bool onlyGap;
-
-	std::string majority_bases;
-	std::string majority_ref;
-	double max_freq;
-	std::default_random_engine rng;
-	std::uniform_int_distribution<int> dist;
-	char majority_base;
-
-	std::string ambig_ref;
-	std::string ambig_bases;
-
-	for (std::string::size_type j = 0; j < L; ++j)
+	// right-clip
+	struct into_right_clip_struct
 	{
-		sum = 0;
+		T from_match;
+		T from_right_clip;
+	} m_into_right_clip;
 
-		MD = 0;
-		sumM = 0;
-		DD = 0;
-		sumD = 0;
-
-		onlyGap = true;
-
-		// first loop
-		for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
-		{
-			if ((refs[i].start <= j) && (j < refs[i].end))
-			{
-				cur_base = refs[i].sequence[j];
-				onlyGap &= (cur_base == '-');
-
-				// allele frequencies
-				if (cur_base != '-')
-				{
-					sum += refs[i].count;
-					E_p[j][cur_base] += refs[i].count;
-				}
-
-				// transition tables
-				if (j < L - 1)
-				{
-					if (cur_base == '-')
-					{
-						// D->
-						sumD += refs[i].count;
-						if (refs[i].sequence[j + 1] == '-')
-						{
-							// ->D
-							DD += refs[i].count;
-						}
-					}
-					else
-					{
-						// M->
-						sumM += refs[i].count;
-						if (refs[i].sequence[j + 1] == '-')
-						{
-							// ->D
-							MD += refs[i].count;
-						}
-					}
-				}
-			}
-		}
-
-		if (onlyGap)
-		{
-			std::cerr << "ERROR: Position '" << j << "' only has gaps.\n";
-			exit(EXIT_FAILURE);
-		}
-
-		majority_bases.clear();
-		max_freq = -1;
-		ambig_bases.clear();
-		// renormalize counts
-		for (char k : { 'A', 'C', 'G', 'T' })
-		{
-			E_p[j][k] /= sum;
-
-			// find the majority base
-			if (E_p[j][k] >= max_freq)
-			{
-				if (E_p[j][k] > max_freq)
-				{
-					majority_bases.clear();
-					max_freq = E_p[j][k];
-				}
-
-				majority_bases.push_back(k);
-			}
-
-			// find ambiguous base
-			if (E_p[j][k] >= ambig_threshold)
-			{
-				ambig_bases.push_back(k);
-			}
-		}
-
-		dist.param(std::uniform_int_distribution<int>::param_type(0, majority_bases.length() - 1));
-		majority_base = majority_bases[dist(rng)];
-		majority_ref.push_back(majority_base);
-
-		ambig_ref.push_back(ambig_to_wobble_base.find(ambig_bases)->second);
-
-		if (j < L - 1)
-		{
-			M_D_p[j] = MD / (sumM ? sumM : 1);
-			D_D_p[j] = DD / (sumD ? sumD : 1);
-		}
-	}
-
-	if (num_haps > 1)
+	/* HMM transition probabilities */
+	// complete transition probabilities
+	template <typename U>
+	struct trans_matrix
 	{
-		std::ofstream output;
-		output.open("ref_majority.fasta");
-		output << ">CONSENSUS" << '\n' << majority_ref << '\n';
-		output.close();
+		// match transition probabilities
+		struct into_match_struct
+		{
+			U from_begin;
+			U from_left_clip;
+			U from_match;
+			U from_insertion;
+			U from_deletion;
+		} into_match;
 
-		output.open("ref_ambig.fasta");
-		output << ">CONSENSUS" << '\n' << ambig_ref << '\n';
-		output.close();
-	}
+		// insertion transition probabilities
+		struct into_insertion_struct
+		{
+			U from_match;
+			U from_insertion;
+		} into_insertion;
 
-	return result;
+		// deletion transition probabilities
+		struct into_deletion_struct
+		{
+			U from_match;
+			U from_deletion;
+		} into_deletion;
+	};
+	std::vector<trans_matrix<T>> m_trans_matrix;
+
+	/* terminal transition probabilities */
+	struct into_end_struct
+	{
+		T from_right_clip;
+		T from_match;
+		T from_last_match;
+	} m_into_end;
+
+	/* emission probabilities */
+	std::vector<dna_array<T, 5>> m_E;
+	dna_array<T, 2> m_uniform_base_e;
+
+	/* table of bases, without errors */
+	std::vector<dna_array<bool, 5>> m_table_of_included_bases;
+
+	/* name of reference genome */
+	std::string m_reference_genome_name;
+
+	/* majority reference sequence */
+	std::string m_majority_ref;
+
+	/* ambiguous reference sequence */
+	std::string m_ambig_ref;
+
+	uint32_t read_length_profile;
+
+	// Ctor
+	reference_genome() = default;
+
+	template <typename V>
+	reference_genome(const reference_genome<V>& v);
+
+	// Setter
+	void set_parameters(
+		const std::vector<dna_array<double, 5>>& allel_freq_,
+		const std::vector<double>& vec_M_to_D_p_,
+		const std::vector<double>& vec_D_to_D_p_,
+		const background_rates& error_rates);
+
+	void set_parameters(
+		const std::string& input_msa,
+		const background_rates& error_rates,
+		uint32_t read_lengths);
+
+	void set_parameters(
+		const std::vector<reference_haplotype>& refs,
+		const background_rates& error_rates);
+
+	bool display_parameters(std::ostream& output, bool fail_on_non_summation = true) const;
+
+	// kmer-based lookup
+	void create_index(uint16_t desired_kmer_length = 20);
+
+	struct index_stat
+	{
+		int32_t POS;
+		int32_t sd;
+		uint32_t num_samples;
+	};
+
+	index_stat find_pos(const boost::string_ref& query) const;
+
+private:
+	uint16_t m_kmer_length;
+	using hash_map_type = boost::unordered_map<std::string, std::vector<uint32_t>, boost_string_ref_hash, boost_string_ref_equal_to>;
+	hash_map_type m_kmer_index;
+};
 }
+
+#include "reference_impl.hpp"
+#include "index_impl.hpp"
 
 #endif /* REFERENCE_HPP */

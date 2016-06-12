@@ -3,6 +3,8 @@
 clean_files() {
 	echo "Cleaning bootstrapped files"
 
+	rm -rf .deps/
+	rm -rf .Tpo
 	rm -rf *.dSYM
 	rm -rf ngshmmalign
 	rm -rf ngshmmalign-0.1.tar.bz2
@@ -32,7 +34,7 @@ clean_files() {
 	rm -rf dna_array_compile_test
 	rm -rf hmmalign_forward_compile_test
 	rm -rf type_caster_compile_test
-	rm -rf parameter_pack_compile_test
+	rm -rf reference_compile_test
 	rm -rf testsuite/*.o
 	rm -rf testsuite/.deps
 	rm -rf testsuite/.dirstamp

@@ -37,10 +37,9 @@
 #include "reference.hpp"
 #include "aligner.hpp"
 
-const int col_width = 8;
 int no_threads;
 
-int main(int argc, char* argv[])
+int main(int argc, const char* argv[])
 {
 	std::cout.imbue(std::locale("en_US.UTF-8"));
 
@@ -50,15 +49,17 @@ int main(int argc, char* argv[])
 	std::string rejects_filename;
 
 	std::vector<std::string> input_files;
-	background_rates<double> params;
-	bool paired_end = false;
+	background_rates params;
 	bool write_unpaired = false;
+	bool exhaustive = false;
 	bool verbose = false;
-	char clip_base;
-	double ambig_threshold;
-	uint32_t min_mapped_length;
+	bool differentiate_match_state = false;
 
-	/* 1) set up program options */
+	clip_mode read_clip_mode;
+	uint32_t min_mapped_length;
+	uint64_t random_seed;
+
+	/* set up program options */
 	// program options
 	boost::program_options::options_description generic("Generic options");
 	generic.add_options()
@@ -72,8 +73,13 @@ int main(int argc, char* argv[])
 		("wrong,w", boost::program_options::value<std::string>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
 		("nthreads,t", boost::program_options::value<int32_t>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
 		("unp", "Keep unpaired reads")
+		(",E", "Use full-exhaustive search, avoiding indexed lookup")
+		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
+		("seed,s", boost::program_options::value<uint64_t>(&random_seed)->default_value(0), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
+		("soft", "Soft-clip reads. Clipped bases will still be in the sequence in the alignment")
+		("HARD", "Extreme Hard-clip reads. Do not write hard-clip in CIGAR, as if the hard-clipped bases never existed. Mutually exclusive with previous option")
 		("verbose,v", "Show progress indicator while aligning")
-		("ambig,a", boost::program_options::value<double>(&ambig_threshold)->default_value(0.075, "0.075"), "Minimum frequency for calling ambiguous base")
+		("ambig,a", boost::program_options::value<double>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
 		("minLen,M", boost::program_options::value<uint32_t>(&min_mapped_length)->default_value(MAGIC_NUMBER, "L * 0.8"), "Minimum mapped length of read")
 
 		("error", boost::program_options::value<double>(&params.error_rate)->default_value(0.005, "0.005"), "Global substitution probability")
@@ -104,7 +110,7 @@ int main(int argc, char* argv[])
 	p.add("input-files", -1);
 	boost::program_options::variables_map global_options;
 
-	/* 2) parse program options */
+	/* 0.0) parse program options */
 	try
 	{
 		boost::program_options::store(boost::program_options::command_line_parser(argc, argv).options(cmdline_options).positional(p).run(), global_options);
@@ -133,60 +139,54 @@ int main(int argc, char* argv[])
 	}
 
 	write_unpaired = global_options.count("unp");
+	exhaustive = global_options.count("-E");
 	verbose = global_options.count("verbose");
-	clip_base = (global_options.count("soft") ? 'S' : 'H');
-	input_files = global_options["input-files"].as<std::vector<std::string>>();
-	omp_set_num_threads(no_threads);
 
-	switch (input_files.size())
+	if (global_options.count("soft") && global_options.count("HARD"))
 	{
-		case 1:
-			paired_end = false;
-			break;
+		std::cerr << "ERROR: You cannot have both '--soft' and '--HARD' enabled.\n";
+		return EXIT_FAILURE;
+	}
+	read_clip_mode = (global_options.count("soft") ? clip_mode::soft : (global_options.count("HARD") ? clip_mode::HARD : clip_mode::hard));
+	differentiate_match_state = global_options.count("-X");
 
-		case 2:
-			paired_end = true;
-			break;
+	input_files = global_options["input-files"].as<std::vector<std::string>>();
 
-		default:
-			std::cerr << "ERROR: You have provided too many input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
-			return EXIT_FAILURE;
-			break;
+	// set OpenMP properties
+	omp_set_num_threads(no_threads);
+	if (random_seed)
+	{
+		// deterministic
+		omp_set_schedule(omp_sched_static, 200);
+	}
+	else
+	{
+		// non-deterministic
+		omp_set_schedule(omp_sched_dynamic, 200);
 	}
 
-	/* 3) load references */
 	if (!boost::filesystem::exists(profile_filename))
 	{
 		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!\n";
 		return EXIT_FAILURE;
 	}
 
-	std::string ref_ext(boost::filesystem::extension(profile_filename));
-	parameter_pack<double> hmm_parameters;
-	std::tuple<std::vector<dna_array<double, 5>>, std::vector<double>, std::vector<double>> msa_profile;
+	/* 0.1) create HMM aligner object */
+	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(write_unpaired, input_files, min_mapped_length, argc, argv);
 
-	std::cout << "1) ";
-	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
-	{
-		std::cout << "Loading profile HMM parameters from FASTA file.\n";
-		std::vector<reference_haplotype> references = fasta_read<reference_haplotype>(profile_filename);
+	/* 1) load reads */
+	ngs_aligner->load_reads(input_files);
 
-		msa_profile = build_parameters_from_msa(references, ambig_threshold);
-	}
+	/* 2) load parameters */
+	ngs_aligner->load_parameters(profile_filename, params);
 
-	/* 4) create HMM object */
-	std::unique_ptr<single_end_aligner<int32_t>> ngs_aligner((paired_end ? new paired_end_aligner<int32_t>(input_files[0], input_files[1], write_unpaired, min_mapped_length, argc, argv) : new single_end_aligner<int32_t>(input_files[0], min_mapped_length, argc, argv)));
-
-	/* 5) sort reads */
+	/* 3) sort reads */
 	ngs_aligner->sort_reads();
 
-	/* 6) set parameters */
-	ngs_aligner->set_parameters(std::get<0>(msa_profile), std::get<1>(msa_profile), std::get<2>(msa_profile), params);
+	/* 4) perform alignment */
+	ngs_aligner->perform_alignment(read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
 
-	/* 7) Perform alignments */
-	ngs_aligner->perform_alignment(clip_base, verbose);
-
-	/* 8) Write output */
+	/* 5) write alignment to output */
 	ngs_aligner->write_alignment_to_file(output_filename, rejects_filename);
 
 	return 0;

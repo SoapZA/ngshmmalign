@@ -3,19 +3,19 @@
 
 /*
  * Copyright (c) 2016 David Seifert
- * 	
+ *
  * This file is part of ngshmmalign
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -26,46 +26,56 @@
 #include <string>
 #include <vector>
 
-template <typename T, std::size_t N>
-class dna_array;
-template <typename T>
-struct background_rates;
+#include <boost/utility/string_ref.hpp>
+#include <boost/iostreams/device/mapped_file.hpp>
 
 #include "hmmalign.hpp"
 #include "sam.hpp"
 
 extern int no_threads;
 
+namespace
+{
+
 struct fastq_entry
 {
-	std::string m_id;
-	std::string m_seq;
-	std::string m_qual;
+	using string_rep = boost::string_ref;
 
-	// ctor:
-	template <typename T1, typename T2, typename T3>
-	fastq_entry(T1&& id_, T2&& seq_, T3&& qual_);
+	string_rep m_id;
+	string_rep m_seq;
+	string_rep m_qual;
 
 	fastq_entry() = default;
 	fastq_entry(const fastq_entry& other) = default;
 	fastq_entry(fastq_entry&& other) = default;
 	fastq_entry& operator=(const fastq_entry& other) = default;
 	fastq_entry& operator=(fastq_entry&& other) = default;
+
+	fastq_entry(
+		const char* id_ptr,
+		std::size_t id_len,
+		const char* seq_ptr,
+		std::size_t seq_len,
+		const char* qual_ptr,
+		std::size_t qual_len);
 };
 
 struct read_entry
 {
 	// ctor:
-	template <typename T1, typename T2, typename T3>
-	read_entry(T1&& id_, T2&& seq_, T3&& qual_);
+	read_entry(
+		const char* id_ptr,
+		std::size_t id_len,
+		const char* seq_ptr,
+		std::size_t seq_len,
+		const char* qual_ptr,
+		std::size_t qual_len);
 
 	read_entry() = default;
 	read_entry(const read_entry& other) = default;
 	read_entry(read_entry&& other) = default;
 	read_entry& operator=(const read_entry& other) = default;
 	read_entry& operator=(read_entry&& other) = default;
-
-	inline bool operator<(const read_entry& other_read_entry) const noexcept;
 
 	// output
 	friend std::ostream& operator<<(std::ostream&, const read_entry&) noexcept;
@@ -79,8 +89,10 @@ template <typename T>
 class single_end_aligner
 {
 public:
-	// ctor
-	single_end_aligner(const std::string& file_name_, uint32_t min_mapped_length_, int argc_, char** argv_) noexcept;
+	static std::unique_ptr<single_end_aligner<T>> create_aligner_instance(bool write_unpaired, const std::vector<std::string>& input_files, uint32_t min_mapped_length, int argc, const char** argv) noexcept;
+
+	// 1. ctor
+	single_end_aligner(uint32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
 
 	single_end_aligner() = delete;
 	single_end_aligner(const single_end_aligner& other) = delete;
@@ -88,57 +100,63 @@ public:
 	single_end_aligner& operator=(const single_end_aligner& other) = delete;
 	single_end_aligner& operator=(single_end_aligner&& other) = delete;
 
-	// dtor
-	virtual ~single_end_aligner() = default;
+	// 2. load reads
+	void load_reads(const std::vector<std::string>& input_files) noexcept;
 
-	// mutators
-	template <typename V>
-	void set_parameters(
-		const std::vector<dna_array<V, 5>>& allel_freq_,
-		const std::vector<V>& vec_M_to_D_p_,
-		const std::vector<V>& vec_D_to_D_p_,
-		background_rates<V> error_rates) noexcept;
+	// 3. load parameters
+	void load_parameters(const std::string& msa_input_file, background_rates& error_rates) noexcept;
 
-	// reads
+	// 4. sort reads
 	void sort_reads() noexcept;
 
-	// alignment
-	void perform_alignment(char clip_char, bool verbose) noexcept;
+	// 5. perform alignment
+	void perform_alignment(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
-	// write alignment to output
-	// output
+	// 6. write alignment to output
 	void write_alignment_to_file(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
 
+	// 7. dtor
+	virtual ~single_end_aligner() = default;
+
 protected:
-	int m_argc;
-	char** m_argv;
+	// 2. load reads
+	virtual void load_reads_impl(const std::vector<std::string>& input_files) noexcept;
 
-	uint32_t m_min_mapped_length;
-	std::string m_file_name;
-	std::vector<read_entry> m_reads;
-	hmmalign<T> m_profile_hmm;
-
-	// helper functions
-	std::size_t number_of_reads() const noexcept;
+	// 3. load parameters
 	uint32_t get_length_profile() const noexcept;
 
-	// reads
+	// 4. sort reads
 	virtual void sort_reads_impl() noexcept;
-	virtual std::size_t number_of_reads_impl() const noexcept;
 
-	// alignment
-	virtual void perform_alignment_impl(char clip_char, bool verbose) noexcept;
+	// 5. perform alignment
+	virtual std::size_t number_of_reads() const noexcept;
+	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
-	// write alignment to output
+	// 6. write alignment to output
 	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
+
+	// command line parameters
+	int m_argc;
+	const char** m_argv;
+
+	// read data
+	uint32_t m_min_mapped_length;
+	std::string m_read_file_name;
+	boost::iostreams::mapped_file_source m_reads_mmap;
+	std::vector<read_entry> m_reads;
+
+	// profile HMM relevant members
+	std::string m_msa_input_file;
+	hmmalign<T> m_profile_hmm;
+	reference_genome<T> m_parameters;
 };
 
 template <typename T>
 class paired_end_aligner : public single_end_aligner<T>
 {
 public:
-	// ctor
-	paired_end_aligner(const std::string& file_name_, const std::string& file_name2_, bool write_unpaired, uint32_t min_mapped_length_, int argc_, char** argv_);
+	// 1. ctor
+	paired_end_aligner(bool write_unpaired, uint32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
 
 	paired_end_aligner() = delete;
 	paired_end_aligner(const paired_end_aligner& other) = delete;
@@ -147,27 +165,41 @@ public:
 	paired_end_aligner& operator=(paired_end_aligner&& other) = delete;
 
 private:
-	using single_end_aligner<T>::m_argc;
-	using single_end_aligner<T>::m_argv;
-	using single_end_aligner<T>::m_min_mapped_length;
-	using single_end_aligner<T>::m_file_name;
-	using single_end_aligner<T>::m_reads;
-	using single_end_aligner<T>::m_profile_hmm;
+	// 2. load reads
+	virtual void load_reads_impl(const std::vector<std::string>& input_files) noexcept override;
 
-	std::string m_file_name2;
+	// 4. sort reads
+	virtual void sort_reads_impl() noexcept override;
+
+	// 5. perform alignment
+	virtual std::size_t number_of_reads() const noexcept override;
+	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept override;
+
+	// 6. write alignment to output
+	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept override;
+
+public:
+	// 7. dtor
+	virtual ~paired_end_aligner() = default;
+
+private:
+	// read data
+	std::string m_read_file_name2;
+	boost::iostreams::mapped_file_source m_reads2_mmap;
 	std::vector<read_entry> m_reads2;
 	bool m_write_unpaired;
 
-	// reads
-	virtual void sort_reads_impl() noexcept override;
-	virtual std::size_t number_of_reads_impl() const noexcept override;
+	using single_end_aligner<T>::m_argc;
+	using single_end_aligner<T>::m_argv;
 
-	// alignment
-	virtual void perform_alignment_impl(char clip_char, bool verbose) noexcept override;
+	using single_end_aligner<T>::m_min_mapped_length;
+	using single_end_aligner<T>::m_read_file_name;
+	using single_end_aligner<T>::m_reads;
 
-	// write alignment to output
-	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept override;
+	using single_end_aligner<T>::m_profile_hmm;
+	using single_end_aligner<T>::m_parameters;
 };
+}
 
 #include "aligner_impl.hpp"
 

@@ -1,10 +1,10 @@
-#include <parameter_pack.hpp>
-
-const int col_width = 9;
+#include <reference.hpp>
 
 int main()
 {
 	typedef double fp_type;
+
+	log_exp_base = 1.000001;
 
 	std::vector<dna_array<fp_type, 5>> E_p{
 		// A     C     G     T
@@ -39,6 +39,7 @@ int main()
 		0.00 // 7 -> 8
 	};
 
+	fp_type min_allele_freq = 0.05;
 	fp_type substitution_rate = 0.005;
 
 	fp_type gap_open = 0.005;
@@ -52,12 +53,13 @@ int main()
 	fp_type right_clip_open = 0.01;
 	fp_type right_clip_extend = 0.90;
 
-	parameter_pack<fp_type> fp_pp;
+	reference_genome<fp_type> fp_pp;
 	fp_pp.set_parameters(
 		E_p,
 		M_D_p,
 		D_D_p,
-		background_rates<double>{
+		background_rates{
+			min_allele_freq,
 			substitution_rate,
 			gap_open,
 			gap_extend,
@@ -68,14 +70,15 @@ int main()
 			left_clip_extend,
 			right_clip_open,
 			right_clip_extend });
-	fp_pp.display_parameters();
+	fp_pp.display_parameters(std::cout);
 
-	parameter_pack<int32_t> int_pp;
+	reference_genome<int32_t> int_pp;
 	int_pp.set_parameters(
 		E_p,
 		M_D_p,
 		D_D_p,
-		background_rates<double>{
+		background_rates{
+			min_allele_freq,
 			substitution_rate,
 			gap_open,
 			gap_extend,
@@ -86,13 +89,13 @@ int main()
 			left_clip_extend,
 			right_clip_open,
 			right_clip_extend });
-	int_pp.display_parameters();
+	int_pp.display_parameters(std::cout);
 
-	parameter_pack<fp_type> fp_pp_convert1(int_pp);
-	parameter_pack<int32_t> int_pp_convert2(fp_pp_convert1);
+	reference_genome<fp_type> fp_pp_convert1(int_pp);
+	reference_genome<int32_t> int_pp_convert2(fp_pp_convert1);
 
 	std::cout << "Displaying parameters for doubly converted parameter pack:\n";
-	fp_pp_convert1.display_parameters(false);
-	int_pp_convert2.display_parameters(false);
+	fp_pp_convert1.display_parameters(std::cout);
+	int_pp_convert2.display_parameters(std::cout);
 	return 0;
 }

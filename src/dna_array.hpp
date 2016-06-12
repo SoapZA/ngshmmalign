@@ -3,19 +3,19 @@
 
 /*
  * Copyright (c) 2016 David Seifert
- * 	
+ *
  * This file is part of ngshmmalign
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
@@ -29,20 +29,21 @@
 #include <stdexcept>
 #include <string>
 
-extern const int col_width;
+namespace
+{
 
 template <typename T, std::size_t N>
 class dna_array
 {
 private:
-	typedef std::array<T, N> array_type;
+	using array_type = std::array<T, N>;
 	array_type m_array;
 
 public:
-	typedef typename array_type::size_type size_type;
-	typedef typename array_type::value_type value_type;
-	typedef value_type& reference;
-	typedef const value_type& const_reference;
+	using size_type = typename array_type::size_type;
+	using value_type = typename array_type::value_type;
+	using reference = value_type&;
+	using const_reference = const value_type&;
 
 	// rule-of-5 ctors
 	dna_array() = default;
@@ -85,12 +86,14 @@ public:
 	// output
 	friend std::ostream& operator<<(std::ostream& output, const dna_array& dna_array_) noexcept
 	{
+		constexpr int col_width = 15;
+
 		return output
-			<< std::left << std::setw(3) << "A:" << std::right << std::setw(col_width) << dna_array_['A'] << '\t'
-			<< std::left << std::setw(3) << "C:" << std::right << std::setw(col_width) << dna_array_['C'] << '\t'
-			<< std::left << std::setw(3) << "G:" << std::right << std::setw(col_width) << dna_array_['G'] << '\t'
-			<< std::left << std::setw(3) << "T:" << std::right << std::setw(col_width) << dna_array_['T'] << '\t'
-			<< std::left << std::setw(3) << "N:" << std::right << std::setw(col_width) << dna_array_['N']
+			<< std::left << std::setw(3) << "A:" << std::left << std::setw(col_width + 1) << dna_array_['A']
+			<< std::left << std::setw(3) << "C:" << std::left << std::setw(col_width + 1) << dna_array_['C']
+			<< std::left << std::setw(3) << "G:" << std::left << std::setw(col_width + 1) << dna_array_['G']
+			<< std::left << std::setw(3) << "T:" << std::left << std::setw(col_width + 1) << dna_array_['T']
+			<< std::left << std::setw(3) << "N:" << std::left << std::setw(col_width + 1) << dna_array_['N']
 			<< '\n';
 	}
 };
@@ -157,6 +160,7 @@ template <typename T, std::size_t N>
 inline typename dna_array<T, N>::reference dna_array<T, N>::operator[](char base) noexcept
 {
 	return const_cast<reference>(static_cast<const dna_array<T, N>&>(*this)[base]);
+}
 }
 
 #endif /* DNA_ARRAY_HPP */

@@ -1,6 +1,7 @@
 # ngshmmalign
 David Seifert (david.seifert@bsse.ethz.ch)
 
+
 ## Introduction
 In the current sequencing landscape, NGS reads are aligned using such aligners as **bwa** (http://bio-bwa.sourceforge.net) or **bowtie** (http://bowtie-bio.sourceforge.net/bowtie2/index.shtml). While these aligners are fast and work well for transcriptomic and exomic data of large eukaryotic genomes, they produce a number of artefacts on genomes experiencing a large number of mutations in the course of their evolution, such as HIV-1 and HCV. These RNA viruses show up as a heterogeneous mixture, with indels and point mutations causing problems in the alignment step. In order to produce more sensitive alignments, **ngshmmalign** implements a profile HMM to produce alignments that are more amenable to studies of such viruses, without resorting to a global, genome-wide multiple sequence alignment.
 
@@ -17,8 +18,8 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 **ngshmmalign** currently performs an exhaustive glocal (global-to-local) alignment, which is very similar in nature to the Needleman-Wunsch algorithm. It has the following features:
 
 - Takes either single-end or paired-end reads as input.
-- Writes the alignment into a fully compliant SAM file.
-- Produces a consensus reference containing ambiguous bases (e.g. A + G = R) and a reference where bases are determined by majority vote.
+- Writes the alignment into a fully compliant SAM file, that passes Picard (http://broadinstitute.github.io/picard/) validation.
+- Produces both a consensus reference containing ambiguous bases (e.g. A + G = R) and a reference where bases are determined by majority vote.
 - Picks a _random_ optimal alignment. All currently known aligners pick an optimal alignment deterministically. While such a strategy makes sense for many situations, it might not be optimal for small viruses. Many viruses for instance have stretches of the same base, also known as homopolymers. Homopolymers can lead to problems, as the deletion probability increases disproportionately in such regions. Imagine having a homopolymeric stretch and some erroneous (lacking one base in the homopolymer) NGS reads. In such cases **bwa** produces the following alignment:
 <p align="center">
 	<img src="img/bwa_gaps.png?raw=true"/>
@@ -42,16 +43,25 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 	<img src="img/PE_Modes.png?raw=true" alt="Paired-end alignment outcomes"/>
 </p>
   The latter three cases are likely to be a technical artefact and can lead to problems in downstream haplotype assembly.
-- Fully parallelised using OpenMP.
+- Writing the `NM:i:` tag, the number of mismatches (or edit distance) to the reference. This takes ambiguous bases into account, for instance
+  ```
+  Ref:   AARAA
+  Read:   AAA
+  ```
+  gives an edit distance of 0, since `R` can be either an `A` or `G`, whereas
+  ```
+  Ref:   AARAA
+  Read:   ATA
+  ```
+  gives an edit distance of 1, as `R` does not include a `T`.
+- Writing the CIGAR using either `'M'` for aligned bases, or `'='` and `'X'` for alignment match and mismatch, respectively. When using `'X'` for alignment mismatches, the number of `'X'` is consistent with the `NM:i:` tag.
+- Fully parallelised using OpenMP. Allows specifying a seed value for the random number generator, such that the alignment becomes deterministic and reproducible.
 - Has a template length cut-off filter. Templates that are too long are removed, using a 3 sigma cut-off threshold.
-
+- Includes a k-mer based index. In practice, on a Haswell-based 2.8 GHz i7-4558U a thread performance of 90-100 reads/thread/s can be achieved (this yields with 4 logical cores an overall performance of 350-400 reads/s) with a 9800 nt HIV-1 genome. Nevertheless, you can always opt out of the indexing, and always perform a globally optimal alignment, with a performance of about 5-6 reads/thread/s
 
 ### Planned Features
 - Parameter estimation using a local multiple sequence alignment. Currently, **ngshmmalign** takes a multiple sequence alignment in FASTA format as input reference.
-- Lookup using FM index, in order to speed up alignment.
 - Banded alignment, further improving speed.
-- Writing the CIGAR using either `'M'` for aligned bases, or `'='` and `'X'` for alignment match and mismatch, respectively.
-- Writing out `NM:i:` tag, the number of mismatches to the reference.
 
 
 ## Requirements
@@ -86,6 +96,7 @@ We strongly recommend you use MacPorts (http://www.macports.org) to install depe
 
 ### GNU/Linux
 On a GNU/Linux system, the aforementioned recommendations are reversed. Most GNU/Linux distributions are built using GCC/libstdc++, which as of GCC 5.1 is not backwards compatible with Clang, and as such building with Clang produced object files will fail in the final linking step.
+
 
 ## Building
 1.  If you have all dependencies satisfied, proceed by generating the build system files

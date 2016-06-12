@@ -3,8 +3,6 @@
 #include "dna_array.hpp"
 #include "hmmalign.hpp"
 
-const int col_width = 8;
-
 int main()
 {
 	typedef double fp_type;
@@ -41,11 +39,12 @@ int main()
 
 	fp_type gap_extend = gap_open / (1 - insert_open - 1.0 / 12 - right_clip_open);
 
-	hmmalign<double> my_hmm(
+	reference_genome<double> parameters;
+	parameters.set_parameters(
 		E_p,
 		M_D_p,
 		D_D_p,
-		background_rates<double>{
+		background_rates{
 			substitution_rate,
 			gap_open,
 			gap_extend,
@@ -162,11 +161,14 @@ int main()
 
 	std::cout << std::fixed << std::setprecision(7);
 	fp_type sum = 0, result;
+
+	hmmalign<double> my_hmm;
+
 	for (const auto& i : { string_vector_1base, string_vector_2base, string_vector_3base, string_vector_4base })
 	{
 		for (const auto& j : i)
 		{
-			result = my_hmm.Lik(j);
+			result = my_hmm.Lik(parameters, j);
 			std::cout << j << ":\t" << result << '\n';
 			sum += result;
 		}
