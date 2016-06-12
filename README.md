@@ -44,15 +44,19 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 </p>
   The latter three cases are likely to be a technical artefact and can lead to problems in downstream haplotype assembly.
 - Writing the `NM:i:` tag, the number of mismatches (or edit distance) to the reference. This takes ambiguous bases into account, for instance
+  
   ```
   Ref:   AARAA
   Read:   AAA
   ```
+  
   gives an edit distance of 0, since `R` can be either an `A` or `G`, whereas
+  
   ```
   Ref:   AARAA
   Read:   ATA
   ```
+  
   gives an edit distance of 1, as `R` does not include a `T`.
 - Writing the CIGAR using either `'M'` for aligned bases, or `'='` and `'X'` for alignment match and mismatch, respectively. When using `'X'` for alignment mismatches, the number of `'X'` is consistent with the `NM:i:` tag.
 - Fully parallelised using OpenMP. Allows specifying a seed value for the random number generator, such that the alignment becomes deterministic and reproducible.
