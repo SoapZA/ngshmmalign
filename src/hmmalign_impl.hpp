@@ -804,7 +804,7 @@ sam_entry hmmalign<T>::viterbi(
 		std::move(all_optimal_alignments[rand_alignment].CIGAR),
 		end.score,
 		all_optimal_alignments[rand_alignment].edit_distance,
-		static_cast<uint32_t>(sequence.length()) - all_optimal_alignments[rand_alignment].left_clip_length - all_optimal_alignments[rand_alignment].right_clip_length,
+		static_cast<int32_t>(sequence.length()) - all_optimal_alignments[rand_alignment].left_clip_length - all_optimal_alignments[rand_alignment].right_clip_length,
 		all_optimal_alignments[rand_alignment].segment_length,
 		all_optimal_alignments[rand_alignment].left_clip_length,
 		all_optimal_alignments[rand_alignment].right_clip_length

@@ -47,27 +47,27 @@ struct sam_entry
 	// SAM fields
 	uint16_t FLAG = 0;
 	const char* RNAME = nullptr;
-	uint32_t POS = 0;
+	int32_t POS = 0;
 	uint16_t MAPQ = 254;
 
 	CIGAR_vec CIGAR;
 
-	uint32_t PNEXT = 0;
+	int32_t PNEXT = 0;
 	int32_t TLEN = 0;
 	char RNEXT = '*';
 
 	// auxiliary fields
 	int64_t SCORE = lower_limit;
-	uint32_t NM = 1000;
+	uint32_t NM = 0;
 
 	// custom fields
 	bool m_forward = true;
 
-	uint32_t m_mapped_length = 0;
-	uint32_t m_segment_length = 0;
+	int32_t m_mapped_length = 0;
+	int32_t m_segment_length = 0;
 
-	uint32_t m_left_clip_length = 0;
-	uint32_t m_right_clip_length = 0;
+	int32_t m_left_clip_length = 0;
+	int32_t m_right_clip_length = 0;
 
 	clip_mode m_clip = clip_mode::hard;
 
@@ -79,14 +79,14 @@ struct sam_entry
 
 	sam_entry(
 		const char* RNAME_,
-		uint32_t POS_,
+		int32_t POS_,
 		CIGAR_vec&& CIGAR_,
 		int64_t SCORE_,
 		uint32_t NM_,
-		uint32_t mapped_length_,
-		uint32_t segment_length_,
-		uint32_t left_clip_length_,
-		uint32_t right_clip_length_)
+		int32_t mapped_length_,
+		int32_t segment_length_,
+		int32_t left_clip_length_,
+		int32_t right_clip_length_)
 		: RNAME(RNAME_),
 		  POS(POS_),
 		  CIGAR(std::move(CIGAR_)),

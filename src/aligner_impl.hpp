@@ -207,7 +207,7 @@ uint32_t single_end_aligner<T>::get_length_profile() const noexcept
 
 	const int32_t median_length = boost::accumulators::median(acc);
 	int32_t temp, diff = std::numeric_limits<int32_t>::max();
-	uint32_t result;
+	uint32_t result = 25;
 
 	for (auto i : { 25, 36, 50, 75, 150, 250, 300 }) // Illumina profiles
 	{
@@ -840,7 +840,7 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 				it1->m_sam_record.PNEXT = it2->m_sam_record.POS;
 				it2->m_sam_record.PNEXT = it1->m_sam_record.POS;
 
-				TLEN = static_cast<int32_t>(it2->m_sam_record.POS + it2->m_sam_record.m_segment_length) - static_cast<int32_t>(it1->m_sam_record.POS);
+				TLEN = (it2->m_sam_record.POS + it2->m_sam_record.m_segment_length) - (it1->m_sam_record.POS);
 				it1->m_sam_record.TLEN = TLEN;
 				it2->m_sam_record.TLEN = -TLEN;
 
