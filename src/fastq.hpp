@@ -125,14 +125,14 @@ std::vector<T> fastq_read(const boost::iostreams::mapped_file_source& input_file
 	std::size_t line = 0;
 
 	const char* id_ptr;
-	std::size_t id_len;
+	std::size_t id_len = 0;
 	bool found_space = false;
 
 	const char* seq_ptr;
-	std::size_t seq_len;
+	std::size_t seq_len = 0;
 
 	const char* qual_ptr;
-	std::size_t qual_len;
+	std::size_t qual_len = 0;
 
 	const char* start_line_ptr = input_file.data();
 	const char* const end_ptr = input_file.data() + input_file.size();
