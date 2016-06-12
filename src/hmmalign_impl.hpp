@@ -143,15 +143,15 @@ sam_entry hmmalign<T>::viterbi(
 	using genome_index_type = typename std::vector<typename reference_genome<T>::template trans_matrix<T>>::size_type;
 	using seq_index_type = std::string::size_type;
 
-	ref_end = std::min<uint32_t>(ref_end, parameters.m_L);
+	const uint32_t reference_end = std::min<uint32_t>(ref_end, parameters.m_L);
 
-	if (ref_start >= ref_end)
+	if (ref_start >= reference_end)
 	{
-		std::cerr << "ERROR: Start '" << ref_start << "' has to be strictly smaller than end '" << ref_end << "'\n";
+		std::cerr << "ERROR: Start '" << ref_start << "' has to be strictly smaller than end '" << reference_end << "'\n";
 		exit(EXIT_FAILURE);
 	}
 
-	const genome_index_type region_L = ref_end - ref_start;
+	const genome_index_type region_L = reference_end - ref_start;
 	const seq_index_type seq_L = sequence.length();
 
 	/////////////////
