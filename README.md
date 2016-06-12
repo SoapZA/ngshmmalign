@@ -71,9 +71,9 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 ## Requirements
 As **ngshmmalign** is still under heavy development, we will not be making release tarballs yet. If you still wish to give **ngshmmalign** a try, you'll need the following tools and libraries:
 
-1.  A **C++11** compliant compiler. The **ngshmmalign** codebase makes extensive use of C++11 features. A recent GCC or Clang release should suffice.
+1.  A **C++11** compliant compiler. The **ngshmmalign** codebase makes extensive use of C++11 features.
 
-    It also strongly recommended that you use an **OpenMP**-capable compiler, as you will not be able to utilise full parallelisation otherwise.
+    GCC 4.8 and later have been verified to work, although we recommend you use at least GCC 5. Clang 3.7 and later have been verified and are also recommended, due to Clang introducing OpenMP with 3.7. Versions of Clang before 3.7 will not be able to utilise multi-threading.
 
 2.  **Autoconf**; latest 2.69 release (http://www.gnu.org/software/autoconf/)
 
