@@ -89,10 +89,10 @@ template <typename T>
 class single_end_aligner
 {
 public:
-	static std::unique_ptr<single_end_aligner<T>> create_aligner_instance(bool write_unpaired, const std::vector<std::string>& input_files, uint32_t min_mapped_length, int argc, const char** argv) noexcept;
+	static std::unique_ptr<single_end_aligner<T>> create_aligner_instance(bool write_unpaired, const std::vector<std::string>& input_files, int32_t min_mapped_length, int argc, const char** argv) noexcept;
 
 	// 1. ctor
-	single_end_aligner(uint32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
+	single_end_aligner(int32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
 
 	single_end_aligner() = delete;
 	single_end_aligner(const single_end_aligner& other) = delete;
@@ -140,7 +140,7 @@ protected:
 	const char** m_argv;
 
 	// read data
-	uint32_t m_min_mapped_length;
+	int32_t m_min_mapped_length;
 	std::string m_read_file_name;
 	boost::iostreams::mapped_file_source m_reads_mmap;
 	std::vector<read_entry> m_reads;
@@ -156,7 +156,7 @@ class paired_end_aligner : public single_end_aligner<T>
 {
 public:
 	// 1. ctor
-	paired_end_aligner(bool write_unpaired, uint32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
+	paired_end_aligner(bool write_unpaired, int32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
 
 	paired_end_aligner() = delete;
 	paired_end_aligner(const paired_end_aligner& other) = delete;

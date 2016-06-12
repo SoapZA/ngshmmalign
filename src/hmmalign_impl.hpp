@@ -538,10 +538,10 @@ sam_entry hmmalign<T>::viterbi(
 
 		CIGAR_vec CIGAR;
 
-		uint32_t POS;
-		uint32_t left_clip_length = 0;
-		uint32_t right_clip_length = 0;
-		uint32_t segment_length = 0;
+		int32_t POS;
+		int32_t left_clip_length = 0;
+		int32_t right_clip_length = 0;
+		int32_t segment_length = 0;
 
 		uint32_t edit_distance = 0;
 

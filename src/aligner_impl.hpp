@@ -227,7 +227,7 @@ template <typename T>
 std::unique_ptr<single_end_aligner<T>> single_end_aligner<T>::create_aligner_instance(
 	const bool write_unpaired,
 	const std::vector<std::string>& input_files,
-	const uint32_t min_mapped_length,
+	const int32_t min_mapped_length,
 	const int argc,
 	const char** argv) noexcept
 {
@@ -250,7 +250,7 @@ std::unique_ptr<single_end_aligner<T>> single_end_aligner<T>::create_aligner_ins
 
 template <typename T>
 single_end_aligner<T>::single_end_aligner(
-	const uint32_t min_mapped_length_,
+	const int32_t min_mapped_length_,
 	const int argc_,
 	const char** argv_) noexcept
 	: m_argc(argc_),
@@ -262,7 +262,7 @@ single_end_aligner<T>::single_end_aligner(
 template <typename T>
 paired_end_aligner<T>::paired_end_aligner(
 	const bool write_unpaired,
-	const uint32_t min_mapped_length_,
+	const int32_t min_mapped_length_,
 	const int argc_,
 	const char** argv_) noexcept
 	: single_end_aligner<T>(min_mapped_length_, argc_, argv_),
@@ -596,7 +596,7 @@ void alignment_impl(
 				}
 #endif
 
-				if ((((sam_alignment.POS - sam_alignment.m_left_clip_length < POS) && (POS != 0)) || ((sam_alignment.POS + sam_alignment.m_segment_length + sam_alignment.m_right_clip_length > end_POS) && (end_POS != parameters.m_L)))
+				if ((((sam_alignment.POS - sam_alignment.m_left_clip_length < POS) && (POS != 0)) || ((sam_alignment.POS + sam_alignment.m_segment_length + sam_alignment.m_right_clip_length > end_POS) && (end_POS != static_cast<int32_t>(parameters.m_L))))
 					&& (exhaustive == false))
 				{
 					// window size probably too small, perform sacrificial full-length alignment
