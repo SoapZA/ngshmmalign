@@ -537,6 +537,7 @@ sam_entry hmmalign<T>::viterbi(
 		//
 
 		CIGAR_vec CIGAR;
+		std::stringstream MD_tag;
 
 		int32_t POS;
 		int32_t left_clip_length = 0;
@@ -588,8 +589,6 @@ sam_entry hmmalign<T>::viterbi(
 					++count;
 				}
 			}
-
-			//CIGAR = ssCIGAR.str();
 		}
 	};
 
@@ -725,8 +724,11 @@ sam_entry hmmalign<T>::viterbi(
 			uint32_t pos_on_genome = alignment.POS;
 
 			CIGAR_vec new_CIGAR_vec;
+
 			char old_state, cur_state;
 			uint32_t cur_length;
+
+			uint32_t MD_length = 0;
 
 			for (const auto& op : alignment.CIGAR)
 			{
@@ -743,6 +745,16 @@ sam_entry hmmalign<T>::viterbi(
 						{
 							cur_state = (parameters.m_table_of_included_bases[i][seq[j]] ? '=' : 'X');
 							alignment.edit_distance += (cur_state == 'X');
+
+							if (cur_state == 'X')
+							{
+								alignment.MD_tag << MD_length << parameters.m_ambig_ref[i];
+								MD_length = 0;
+							}
+							else
+							{
+								++MD_length;
+							}
 
 							if (rewrite_cigar)
 							{
@@ -773,6 +785,7 @@ sam_entry hmmalign<T>::viterbi(
 							new_CIGAR_vec.push_back(op);
 						}
 
+						alignment.edit_distance += op.second;
 						pos_in_read += op.second;
 						break;
 
@@ -782,6 +795,10 @@ sam_entry hmmalign<T>::viterbi(
 							new_CIGAR_vec.push_back(op);
 						}
 
+						alignment.MD_tag << MD_length << '^' << parameters.m_ambig_ref.substr(pos_on_genome, op.second);
+						MD_length = 0;
+
+						alignment.edit_distance += op.second;
 						pos_on_genome += op.second;
 						break;
 				}
@@ -791,6 +808,8 @@ sam_entry hmmalign<T>::viterbi(
 			{
 				alignment.CIGAR.swap(new_CIGAR_vec);
 			}
+
+			alignment.MD_tag << MD_length;
 		}
 	};
 
@@ -802,8 +821,9 @@ sam_entry hmmalign<T>::viterbi(
 		parameters.m_reference_genome_name.c_str(),
 		all_optimal_alignments[rand_alignment].POS,
 		std::move(all_optimal_alignments[rand_alignment].CIGAR),
-		end.score,
 		all_optimal_alignments[rand_alignment].edit_distance,
+		all_optimal_alignments[rand_alignment].MD_tag.str(),
+		end.score,
 		static_cast<int32_t>(sequence.length()) - all_optimal_alignments[rand_alignment].left_clip_length - all_optimal_alignments[rand_alignment].right_clip_length,
 		all_optimal_alignments[rand_alignment].segment_length,
 		all_optimal_alignments[rand_alignment].left_clip_length,

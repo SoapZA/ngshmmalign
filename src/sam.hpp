@@ -57,8 +57,9 @@ struct sam_entry
 	char RNEXT = '*';
 
 	// auxiliary fields
-	int64_t SCORE = lower_limit;
 	uint32_t NM = 0;
+	std::string MD;
+	int64_t SCORE = lower_limit;
 
 	// custom fields
 	bool m_forward = true;
@@ -81,8 +82,9 @@ struct sam_entry
 		const char* RNAME_,
 		int32_t POS_,
 		CIGAR_vec&& CIGAR_,
-		int64_t SCORE_,
 		uint32_t NM_,
+		std::string&& MD_,
+		int64_t SCORE_,
 		int32_t mapped_length_,
 		int32_t segment_length_,
 		int32_t left_clip_length_,
@@ -90,8 +92,9 @@ struct sam_entry
 		: RNAME(RNAME_),
 		  POS(POS_),
 		  CIGAR(std::move(CIGAR_)),
-		  SCORE(SCORE_),
 		  NM(NM_),
+		  MD(std::move(MD_)),
+		  SCORE(SCORE_),
 		  m_mapped_length(mapped_length_),
 		  m_segment_length(segment_length_),
 		  m_left_clip_length(left_clip_length_),

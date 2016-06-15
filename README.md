@@ -59,6 +59,7 @@ Here the reference genome consists of the Match (blue) states. Match states can 
   
   gives an edit distance of 1, as `R` does not include a `T`.
 - Writing the CIGAR using either `'M'` for aligned bases, or `'='` and `'X'` for alignment match and mismatch, respectively. When using `'X'` for alignment mismatches, the number of `'X'` is consistent with the `NM:i:` tag.
+- Writing the `MD:Z:` tag correctly, allowing for reference-free analysis.
 - Fully parallelised using OpenMP. Allows specifying a seed value for the random number generator, such that the alignment becomes deterministic and reproducible.
 - Has a template length cut-off filter. Templates that are too long are removed, using a 3 sigma cut-off threshold.
 - Includes a k-mer based index. In practice, on a Haswell-based 2.8 GHz i7-4558U a thread performance of 90-100 reads/thread/s can be achieved (this yields with 4 logical cores an overall performance of 350-400 reads/s) with a 9800 nt HIV-1 genome. Nevertheless, you can always opt out of the indexing, and always perform a globally optimal alignment, with a performance of about 5-6 reads/thread/s

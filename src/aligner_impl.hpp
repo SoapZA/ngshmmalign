@@ -192,8 +192,9 @@ std::ostream& operator<<(
 	// Alignment Score + Edit Distance //
 	/////////////////////////////////////
 	return output
-		<< '\t' << "AS:i:" << read.m_sam_record.SCORE
-		<< '\t' << "NM:i:" << read.m_sam_record.NM << '\n';
+		<< '\t' << "NM:i:" << read.m_sam_record.NM
+		<< '\t' << "MD:Z:" << read.m_sam_record.MD
+		<< '\t' << "AS:i:" << read.m_sam_record.SCORE << '\n';
 }
 
 template <typename T>
