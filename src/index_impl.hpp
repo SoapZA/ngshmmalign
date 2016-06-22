@@ -31,7 +31,8 @@ namespace
 template <typename T>
 void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 {
-	m_kmer_length = desired_kmer_length;
+	//m_kmer_length = desired_kmer_length;
+	constexpr int32_t max_kmers = 10000000;
 
 	auto expand_ambig_sequence = [&](const uint32_t POS, const uint32_t length)
 	{
@@ -96,12 +97,33 @@ void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 		}
 	};
 
-	std::cout << "   Building k-mer index, k = " << m_kmer_length << '\n';
-	m_kmer_index.clear();
-
-	for (std::size_t i = 0; i < m_L - m_kmer_length + 1; ++i)
+	bool too_large;
+	for (m_kmer_length = desired_kmer_length; m_kmer_length >= 10; --m_kmer_length)
 	{
-		expand_ambig_sequence(i, m_kmer_length);
+		std::cout << "   Building k-mer index, k = " << m_kmer_length;
+		m_kmer_index.clear();
+
+		too_large = false;
+		for (std::size_t i = 0; i < m_L - m_kmer_length + 1; ++i)
+		{
+			expand_ambig_sequence(i, m_kmer_length);
+
+			if (m_kmer_index.size() > max_kmers)
+			{
+				too_large = true;
+				break;
+			}
+		}
+
+		if (too_large == true)
+		{
+			std::cout << " -> too large\n";
+		}
+		else
+		{
+			std::cout << " -> " << m_kmer_index.size() << '\n';
+			break;
+		}
 	}
 }
 

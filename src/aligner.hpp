@@ -80,10 +80,15 @@ struct read_entry
 	// output
 	friend std::ostream& operator<<(std::ostream&, const read_entry&) noexcept;
 
+	void print_sequence(std::ostream& output, bool clip_bases) const noexcept;
+	void print_qual(std::ostream& output, bool clip_bases) const noexcept;
+
 	// members:
 	fastq_entry m_fastq_record;
 	sam_entry m_sam_record;
 };
+
+struct partioned_genome;
 
 template <typename T>
 class single_end_aligner
@@ -109,13 +114,16 @@ public:
 	// 4. sort reads
 	void sort_reads() noexcept;
 
-	// 5. perform alignment
+	// 5. perform parameter estimation
+	void estimate_parameters(uint64_t seed, bool verbose) noexcept;
+
+	// 6. perform alignment
 	void perform_alignment(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
-	// 6. write alignment to output
+	// 7. write alignment to output
 	void write_alignment_to_file(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
 
-	// 7. dtor
+	// 8. dtor
 	virtual ~single_end_aligner() = default;
 
 protected:
@@ -128,16 +136,20 @@ protected:
 	// 4. sort reads
 	virtual void sort_reads_impl() noexcept;
 
-	// 5. perform alignment
+	// 5. perform parameter estimation
+	virtual void estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept;
+
+	// 6. perform alignment
 	virtual std::size_t number_of_reads() const noexcept;
 	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
-	// 6. write alignment to output
+	// 7. write alignment to output
 	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
 
 	// command line parameters
 	int m_argc;
 	const char** m_argv;
+	int m_phase = 0;
 
 	// read data
 	int32_t m_min_mapped_length;
@@ -171,15 +183,18 @@ private:
 	// 4. sort reads
 	virtual void sort_reads_impl() noexcept override;
 
-	// 5. perform alignment
+	// 5. perform parameter estimation
+	virtual void estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept override;
+
+	// 6. perform alignment
 	virtual std::size_t number_of_reads() const noexcept override;
 	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept override;
 
-	// 6. write alignment to output
+	// 7. write alignment to output
 	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept override;
 
 public:
-	// 7. dtor
+	// 8. dtor
 	virtual ~paired_end_aligner() = default;
 
 private:

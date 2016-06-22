@@ -27,6 +27,7 @@
 #include <thread>
 #include <tuple>
 #include <chrono>
+#include <cstdlib>
 
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
@@ -48,14 +49,8 @@ int main(int argc, const char* argv[])
 	std::string output_filename;
 	std::string rejects_filename;
 
-	std::vector<std::string> input_files;
 	background_rates params;
-	bool write_unpaired = false;
-	bool exhaustive = false;
-	bool verbose = false;
-	bool differentiate_match_state = false;
 
-	clip_mode read_clip_mode;
 	int32_t min_mapped_length;
 	uint64_t random_seed;
 
@@ -68,19 +63,21 @@ int main(int argc, const char* argv[])
 	// configuration options
 	boost::program_options::options_description config("Configuration");
 	config.add_options()
-		("ref,r", boost::program_options::value<decltype(profile_filename)>(&profile_filename)->required(), "File containing the profile/MSA of the reference")
-		("out,o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
+		(",r", boost::program_options::value<decltype(profile_filename)>(&profile_filename), "File containing the profile/MSA of the reference")
+		(",R", boost::program_options::value<decltype(profile_filename)>(&profile_filename), "File containing the profile/MSA of the reference. Will perform a comprehensive parameter estimation using MAFFT. Mutually exclusive with -r option")
+		(",o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
 		("wrong,w", boost::program_options::value<decltype(rejects_filename)>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
-		("nthreads,t", boost::program_options::value<decltype(no_threads)>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
-		("unp", "Keep unpaired reads")
+		(",t", boost::program_options::value<decltype(no_threads)>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
+		(",u", "Keep unpaired reads")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
-		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(0), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
-		("soft", "Soft-clip reads. Clipped bases will still be in the sequence in the alignment")
+		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(42), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
+		("hard", "Hard-clip reads. Clipped bases will NOT be in the sequence in the alignment")
 		("HARD", "Extreme Hard-clip reads. Do not write hard-clip in CIGAR, as if the hard-clipped bases never existed. Mutually exclusive with previous option")
-		("verbose,v", "Show progress indicator while aligning")
-		("ambig,a", boost::program_options::value<decltype(params.low_frequency_cutoff)>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
-		("minLen,M", boost::program_options::value<decltype(min_mapped_length)>(&min_mapped_length)->default_value(std::numeric_limits<decltype(min_mapped_length)>::max(), "L * 0.8"), "Minimum mapped length of read")
+		(",v", "Show progress indicator while aligning")
+
+		(",M", boost::program_options::value<decltype(min_mapped_length)>(&min_mapped_length)->default_value(std::numeric_limits<decltype(min_mapped_length)>::max(), "L * 0.8"), "Minimum mapped length of read")
+		(",a", boost::program_options::value<decltype(params.low_frequency_cutoff)>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
 
 		("error", boost::program_options::value<decltype(params.error_rate)>(&params.error_rate)->default_value(0.005, "0.005"), "Global substitution probability")
 		("go", boost::program_options::value<decltype(params.gap_open)>(&params.gap_open)->default_value(1e-4, "1e-4"), "Gap open probability")
@@ -118,8 +115,8 @@ int main(int argc, const char* argv[])
 		// show help options
 		if (global_options.count("help"))
 		{
-			std::cout << visible << "\n";
-			return EXIT_SUCCESS;
+			std::cout << visible << '\n';
+			exit(EXIT_SUCCESS);
 		}
 
 		boost::program_options::notify(global_options);
@@ -127,37 +124,89 @@ int main(int argc, const char* argv[])
 	catch (boost::program_options::required_option& e)
 	{
 		if (e.get_option_name() == "--input-files")
+		{
 			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
+		}
 		else
-			std::cerr << "ERROR: " << e.what() << "\n";
-		return EXIT_FAILURE;
+		{
+			std::cerr << "ERROR: " << e.what() << '\n';
+		}
+		exit(EXIT_FAILURE);
 	}
 	catch (boost::program_options::error& e)
 	{
-		std::cerr << "ERROR: " << e.what() << "\n";
-		return EXIT_FAILURE;
+		std::cerr << "ERROR: " << e.what() << '\n';
+		exit(EXIT_FAILURE);
 	}
 
 	/* 0.1) assign parameter values */
-	write_unpaired = global_options.count("unp");
-	exhaustive = global_options.count("-E");
-	verbose = global_options.count("verbose");
+	const bool write_unpaired = global_options.count("-u");
+	const bool exhaustive = global_options.count("-E");
+	const bool verbose = global_options.count("-v");
+	const bool differentiate_match_state = global_options.count("-X");
+	const bool perform_hmm_learning = global_options.count("-R");
 
-	if (global_options.count("soft") && global_options.count("HARD"))
+	switch (global_options.count("-r") + perform_hmm_learning)
 	{
-		std::cerr << "ERROR: You cannot have both '--soft' and '--HARD' enabled.\n";
-		return EXIT_FAILURE;
+		case 0:
+			std::cerr << "ERROR: You need to specify either '-r' or '-R' for the reference.\n";
+			exit(EXIT_FAILURE);
+			break;
+
+		case 2:
+			std::cerr << "ERROR: You cannot specify both '-r' and '-R'.\n";
+			exit(EXIT_FAILURE);
+			break;
+
+		default:
+			break;
 	}
-	read_clip_mode = (global_options.count("soft") ? clip_mode::soft : (global_options.count("HARD") ? clip_mode::HARD : clip_mode::hard));
-	differentiate_match_state = global_options.count("-X");
+
+	const char* env_var = std::getenv("MAFFT_BIN");
+	const std::string mafft(env_var ? env_var : "mafft");
+	if (perform_hmm_learning)
+	{
+		// try and find MAFFT
+		// 1. try via environmental variable
+		// 2. then try via PATH
+		// std::cout << "LINE: " << (mafft + " --help > /dev/null 2>&1") << '\n';
+
+		int result = std::system((mafft + " --help > /dev/null 2>&1").c_str());
+
+		//std::cout << "Result: " << WEXITSTATUS(result) << '\n';
+		//std::cout << (env_var ? "Using ENV variable" : "Using PATH for lookup") << '\n';
+
+		switch (WEXITSTATUS(result))
+		{
+			case 0:
+			case 1:
+				std::cout << "Found MAFFT via " << (env_var ? "MAFFT_BIN" : "PATH") << '\n';
+				break;
+
+			case 127:
+				std::cerr << "ERROR: Couldn't find MAFFT.\n";
+				exit(EXIT_FAILURE);
+
+			default:
+				std::cout << "ERROR: Unknown exit code returned.\n";
+				exit(EXIT_FAILURE);
+		}
+	}
+
+	if (global_options.count("hard") && global_options.count("HARD"))
+	{
+		std::cerr << "ERROR: You cannot have both '--hard' and '--HARD' enabled.\n";
+		exit(EXIT_FAILURE);
+	}
+	const clip_mode read_clip_mode = (global_options.count("hard") ? clip_mode::hard : (global_options.count("HARD") ? clip_mode::HARD : clip_mode::soft));
 
 	if (min_mapped_length <= 0)
 	{
 		std::cerr << "ERROR: -M has to be strictly positive.\n";
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 
-	input_files = global_options["input-files"].as<std::vector<std::string>>();
+	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
 	// set OpenMP properties
 	omp_set_num_threads(no_threads);
@@ -175,7 +224,7 @@ int main(int argc, const char* argv[])
 	if (!boost::filesystem::exists(profile_filename))
 	{
 		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!\n";
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 
 	/* 0.2) create HMM aligner object */
@@ -190,11 +239,17 @@ int main(int argc, const char* argv[])
 	/* 3) sort reads */
 	ngs_aligner->sort_reads();
 
-	/* 4) perform alignment */
+	/* 4) perform parameter estimation */
+	if (perform_hmm_learning)
+	{
+		ngs_aligner->estimate_parameters(random_seed, verbose);
+	}
+
+	/* 5) perform alignment */
 	ngs_aligner->perform_alignment(read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
 
-	/* 5) write alignment to output */
+	/* 6) write alignment to output */
 	ngs_aligner->write_alignment_to_file(output_filename, rejects_filename);
 
-	return 0;
+	return EXIT_SUCCESS;
 }

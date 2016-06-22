@@ -94,6 +94,48 @@ inline void write_seq_qual(
 	}
 }
 
+void read_entry::print_sequence(std::ostream& output, bool clip_bases) const noexcept
+{
+	const uint32_t left_clip = (clip_bases ? m_sam_record.m_left_clip_length : 0);
+	const uint32_t right_clip = (clip_bases ? m_sam_record.m_right_clip_length : 0);
+
+	if (m_sam_record.m_forward)
+	{
+		// forward aligned
+		auto it_start = m_fastq_record.m_seq.cbegin() + left_clip;
+		auto it_end = m_fastq_record.m_seq.cend() - right_clip;
+		write_seq_qual(output, it_start, it_end, identity_char);
+	}
+	else
+	{
+		// reverse complement aligned
+		auto it_start = m_fastq_record.m_seq.crbegin() + left_clip;
+		auto it_end = m_fastq_record.m_seq.crend() - right_clip;
+		write_seq_qual(output, it_start, it_end, rev_comp_char);
+	}
+}
+
+void read_entry::print_qual(std::ostream& output, bool clip_bases) const noexcept
+{
+	const uint32_t left_clip = (clip_bases ? m_sam_record.m_left_clip_length : 0);
+	const uint32_t right_clip = (clip_bases ? m_sam_record.m_right_clip_length : 0);
+
+	if (m_sam_record.m_forward)
+	{
+		// forward aligned
+		auto it_start = m_fastq_record.m_qual.cbegin() + left_clip;
+		auto it_end = m_fastq_record.m_qual.cend() - right_clip;
+		write_seq_qual(output, it_start, it_end, identity_char);
+	}
+	else
+	{
+		// reverse complement aligned
+		auto it_start = m_fastq_record.m_qual.crbegin() + left_clip;
+		auto it_end = m_fastq_record.m_qual.crend() - right_clip;
+		write_seq_qual(output, it_start, it_end, identity_char);
+	}
+}
+
 // output
 std::ostream& operator<<(
 	std::ostream& output,
@@ -153,40 +195,10 @@ std::ostream& operator<<(
 	////////////////
 	// SEQ + QUAL //
 	////////////////
-	uint32_t left_clip = 0;
-	uint32_t right_clip = 0;
-	if ((read.m_sam_record.m_clip == clip_mode::hard) || (read.m_sam_record.m_clip == clip_mode::HARD))
-	{
-		left_clip = read.m_sam_record.m_left_clip_length;
-		right_clip = read.m_sam_record.m_right_clip_length;
-	}
-
-	if (read.m_sam_record.m_forward)
-	{
-		// forward aligned
-		auto it_start = read.m_fastq_record.m_seq.cbegin() + left_clip;
-		auto it_end = read.m_fastq_record.m_seq.cend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-
-		output << '\t';
-
-		it_start = read.m_fastq_record.m_qual.cbegin() + left_clip;
-		it_end = read.m_fastq_record.m_qual.cend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-	}
-	else
-	{
-		// reverse complement aligned
-		auto it_start = read.m_fastq_record.m_seq.crbegin() + left_clip;
-		auto it_end = read.m_fastq_record.m_seq.crend() - right_clip;
-		write_seq_qual(output, it_start, it_end, rev_comp_char);
-
-		output << '\t';
-
-		it_start = read.m_fastq_record.m_qual.crbegin() + left_clip;
-		it_end = read.m_fastq_record.m_qual.crend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-	}
+	bool clip_bases = ((read.m_sam_record.m_clip == clip_mode::hard) || (read.m_sam_record.m_clip == clip_mode::HARD));
+	read.print_sequence(output, clip_bases);
+	output << '\t';
+	read.print_qual(output, clip_bases);
 
 	/////////////////////////////////////
 	// Alignment Score + Edit Distance //
@@ -289,7 +301,7 @@ void single_end_aligner<T>::load_reads_impl(
 	}
 
 	m_read_file_name = input_files.front();
-	std::cout << "1) Loading reads into memory from " << m_read_file_name << '\n';
+	std::cout << ++m_phase << ") Loading reads into memory from " << m_read_file_name << '\n';
 	m_reads_mmap.open(m_read_file_name);
 	m_reads = fastq_read<read_entry>(m_reads_mmap);
 }
@@ -317,7 +329,7 @@ void single_end_aligner<T>::load_parameters(
 	const std::string& msa_input_file,
 	background_rates& error_rates) noexcept
 {
-	std::cout << "2) ";
+	std::cout << ++m_phase << ") ";
 	std::string ref_ext(boost::filesystem::extension(msa_input_file));
 	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
 	{
@@ -360,7 +372,7 @@ void single_end_aligner<T>::load_parameters(
 template <typename T>
 void single_end_aligner<T>::sort_reads() noexcept
 {
-	std::cout << "3) Sorting reads from " << m_read_file_name << '\n';
+	std::cout << ++m_phase << ") Sorting reads from " << m_read_file_name << '\n';
 	sort_reads_impl();
 }
 
@@ -379,7 +391,179 @@ void paired_end_aligner<T>::sort_reads_impl() noexcept
 	std::sort(m_reads2.begin(), m_reads2.end(), comp_read_entry_by_queryname);
 }
 
-// 5. perform alignment
+// 5. perform parameter estimation
+struct partioned_genome
+{
+	struct region
+	{
+		int32_t m_start;
+		int32_t m_end;
+
+		int32_t m_analysis_start;
+		int32_t m_analysis_end;
+
+		std::vector<const read_entry*> m_reads;
+
+		region(const int32_t start_, const int32_t end_, const int32_t analysis_start_, const int32_t analysis_end_) noexcept
+			: m_start(start_),
+			  m_end(end_),
+			  m_analysis_start(analysis_start_),
+			  m_analysis_end(analysis_end_) {}
+	};
+	std::vector<region> m_regions;
+	const int32_t m_offset;
+	const int32_t m_num_bins;
+
+	partioned_genome() = delete;
+	partioned_genome(const partioned_genome&) = delete;
+	partioned_genome(partioned_genome&&) = delete;
+	partioned_genome& operator=(const partioned_genome& other) = delete;
+	partioned_genome& operator=(partioned_genome&& other) = delete;
+
+	partioned_genome(const int32_t L, const int32_t read_profile) noexcept
+		: m_offset(read_profile / 6),
+		  m_num_bins(L / m_offset)
+	{
+		m_regions.reserve(m_num_bins);
+
+		for (int32_t i = 0; i < L - read_profile; i += m_offset)
+		{
+			const int32_t end = std::min<int32_t>(L, i + m_offset + read_profile);
+			m_regions.emplace_back(i, end, i + 3 * m_offset, i + 4 * m_offset);
+
+			//std::cout
+			//	<< "Start:          " << m_regions.back().m_start << '\n'
+			//	<< "End:            " << m_regions.back().m_end << '\n'
+			//	<< "Start Analysis: " << m_regions.back().m_analysis_start << '\n'
+			//	<< "End Analysis:   " << m_regions.back().m_analysis_end << '\n'
+			//	<< '\n';
+		}
+
+		//exit(0);
+	}
+
+	void add_reads(const std::vector<read_entry>& reads, std::default_random_engine& generator) noexcept
+	{
+		uint64_t num_unique_assignments = 0;
+		uint64_t num_multiple_assignments = 0;
+		uint64_t num_no_assignments = 0;
+
+		for (const auto& read : reads)
+		{
+			const auto start = read.m_sam_record.POS - read.m_sam_record.m_left_clip_length;
+			const auto end = read.m_sam_record.POS + read.m_sam_record.m_segment_length + read.m_sam_record.m_right_clip_length;
+
+			//auto overlap = [](int32_t x_start, int32_t y_start, int32_t x_end, int32_t y_end) -> int32_t
+			//{
+			//	return std::min(x_end, y_end) - std::max(x_start, y_start);
+			//};
+
+			//std::cout << " on genome Start:\t" << start << " - " << end << '\n';
+
+			std::vector<int32_t> candidate_regions;
+			for (int32_t i = start / m_offset; i >= 0; --i)
+			{
+				if ((m_regions.at(i).m_start <= start) && (end <= m_regions.at(i).m_end))
+				{
+					candidate_regions.push_back(i);
+					//std::cout << "Start: " << m_regions.at(i).m_start << "\tStop: " << m_regions.at(i).m_end << '\n';
+				}
+				else
+				{
+					break;
+				}
+			}
+
+			if (candidate_regions.size())
+			{
+				// got some candidates
+				int32_t rand_assignment = std::uniform_int_distribution<int32_t>(0, candidate_regions.size() - 1)(generator);
+				m_regions[candidate_regions[rand_assignment]].m_reads.push_back(&read);
+
+				if (candidate_regions.size() == 1)
+				{
+					++num_unique_assignments;
+				}
+				else
+				{
+					++num_multiple_assignments;
+				}
+
+				//std::cout
+				//	<< "using region "
+				//	<< m_regions.at(candidate_regions.at(rand_assignment)).m_start
+				//	<< " - "
+				//	<< m_regions.at(candidate_regions.at(rand_assignment)).m_end;
+			}
+			else
+			{
+				++num_no_assignments;
+				// found no region
+				//std::cerr << "Read starting " << start << "-" << end << " could not be assigned a candidate region\n";
+				//std::cout << "Found no optimal region!";
+			}
+
+			//std::cout << '\n' << '\n';
+		}
+
+		std::cout
+			<< "Unique:   " << num_unique_assignments << '\n'
+			<< "Multiple: " << num_multiple_assignments << '\n'
+			<< "None:     " << num_no_assignments << '\n';
+	}
+
+	void write_out_regions(const std::string& tmpdir, const std::string& reference) const noexcept
+	{
+		for (const auto& i : m_regions)
+		{
+			const std::string output_dir(tmpdir + "/reg_" + std::to_string(i.m_start) + "_" + std::to_string(i.m_end));
+			boost::filesystem::create_directories(output_dir);
+			std::ofstream output(output_dir + "/reads.fasta");
+
+			output << ">REF\n" << reference.substr(i.m_start, i.m_end - i.m_start);
+
+			for (const auto& j : i.m_reads)
+			{
+				output << "\n>" << j->m_fastq_record.m_id << '\n';
+				j->print_sequence(output, false);
+			}
+			output << '\n';
+			output.close();
+		}
+	}
+};
+
+template <typename T>
+void single_end_aligner<T>::estimate_parameters(uint64_t seed, bool verbose) noexcept
+{
+	// 1. perform rough alignment first
+	std::cout << ++m_phase << ") Performing first alignment with -t = " << no_threads << " threads\n";
+	perform_alignment_impl(clip_mode::soft, seed, false, verbose, false);
+
+	// 2. chop up genome and extract reads
+	std::default_random_engine rng(seed);
+	partioned_genome separated_reads(m_parameters.m_L, m_parameters.read_length_profile);
+	estimate_parameters_impl(separated_reads, rng);
+
+	separated_reads.write_out_regions("./TMP", m_parameters.m_ambig_ref);
+
+	exit(0);
+}
+
+template <typename T>
+void single_end_aligner<T>::estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept
+{
+	separated_reads.add_reads(m_reads, generator);
+}
+
+template <typename T>
+void paired_end_aligner<T>::estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept
+{
+	single_end_aligner<T>::estimate_parameters_impl(separated_reads, generator);
+	separated_reads.add_reads(m_reads2, generator);
+}
+
+// 6. perform alignment
 template <typename T>
 std::size_t single_end_aligner<T>::number_of_reads() const noexcept
 {
@@ -660,7 +844,7 @@ void single_end_aligner<T>::perform_alignment(
 	const bool verbose,
 	const bool differentiate_match_state) noexcept
 {
-	std::cout << "4) Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping) with -t = " << no_threads << " threads\n";
+	std::cout << ++m_phase << ") Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping) with -t = " << no_threads << " threads\n";
 	if (seed)
 	{
 		std::cout << "   Using provided seed " << seed << " for deterministic alignment\n";
@@ -710,13 +894,13 @@ void paired_end_aligner<T>::perform_alignment_impl(
 	std::cout << '\n';
 }
 
-// 6. write alignment to output
+// 7. write alignment to output
 template <typename T>
 void single_end_aligner<T>::write_alignment_to_file(
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
-	std::cout << "5) Writing ";
+	std::cout << ++m_phase << ") Writing ";
 	write_alignment_to_file_impl(output_file_name, rejects_file_name);
 	std::cout << '\n';
 }
