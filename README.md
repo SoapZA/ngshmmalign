@@ -17,6 +17,8 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 ## Features
 **ngshmmalign** currently performs an exhaustive glocal (global-to-local) alignment, which is very similar in nature to the Needleman-Wunsch algorithm. It has the following features:
 
+- Parameter estimation using multiple windows with local multiple sequence alignments. To this end, **ngshmmalign** uses **MAFFT** (http://mafft.cbrc.jp/alignment/software/) on a subsample of all reads to estimate the parameters of the profile HMM.
+- **ngshmmalign** can also use a multiple sequence alignment (including just a single contig/sequence) in FASTA as an input reference.
 - Takes either single-end or paired-end reads as input.
 - Writes the alignment into a fully compliant SAM file, that passes Picard (http://broadinstitute.github.io/picard/) validation.
 - Produces both a consensus reference containing ambiguous bases (e.g. A + G = R) and a reference where bases are determined by majority vote.
@@ -65,7 +67,6 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 - Includes a k-mer based index. In practice, on a Haswell-based 2.8 GHz i7-4558U a thread performance of 90-100 reads/thread/s can be achieved (this yields with 4 logical cores an overall performance of 350-400 reads/s) with a 9800 nt HIV-1 genome. Nevertheless, you can always opt out of the indexing, and always perform a globally optimal alignment, with a performance of about 5-6 reads/thread/s
 
 ### Planned Features
-- Parameter estimation using a local multiple sequence alignment. Currently, **ngshmmalign** takes a multiple sequence alignment in FASTA format as input reference.
 - Banded alignment, further improving speed.
 
 
@@ -95,6 +96,10 @@ As **ngshmmalign** is still under heavy development, we will not be making relea
 6.  **standard Unix utilities**; such as sed, etc...
 
     If you cannot execute a command, chances are that you are missing one of the more common utilities we require in addition to the tools listed above.
+
+7.  **MAFFT** (optional); (http://mafft.cbrc.jp/alignment/software/)
+
+    If you wish to align reads and optimize the reference sequence concurrently. MAFFT is used to align a subsample of reads in order to estimate biological indels.
 
 ### OS X
 We strongly recommend you use MacPorts (http://www.macports.org) to install dependencies. We also recommend you employ Clang from MacPorts, as it is the only OpenMP-capable compiler that is simultaneously ABI-compatible with installed libraries, such as boost. While building with GCC on OS X is possible, it requires an orthogonal toolchain which is far more involved and beyond the scope of this README.
@@ -129,3 +134,11 @@ On a GNU/Linux system, the aforementioned recommendations are reversed. Most GNU
     make DESTDIR="${D}" install
     ```
     where you specify the destination in `${D}`.
+
+
+## Running
+The parameters of **ngshmmalign** can be viewed with the help option `-h`. If you wish to use **MAFFT**, you have two options:
+
+1.  Specify the path of the `mafft` program in the environmental variable `MAFFT_BIN`.
+
+2.  As a fallback, if you ensure that `mafft` is located in your `$PATH`, it will also be found.

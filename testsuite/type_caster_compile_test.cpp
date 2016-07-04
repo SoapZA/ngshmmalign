@@ -4,8 +4,10 @@
 
 int main()
 {
-	std::cout << "        " << std::left << std::setw(15) << "Difference"
-			  << "Result\n";
+	std::cout
+		<< "        "
+		<< std::left << std::setw(15) << "Difference"
+		<< "Result\n";
 
 	bool result = true;
 	log_exp_base = 10;

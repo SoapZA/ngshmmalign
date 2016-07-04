@@ -42,6 +42,8 @@
 #include "utility_functions.hpp"
 #include "dna_array.hpp"
 
+extern int num_threads;
+
 namespace
 {
 
@@ -75,17 +77,18 @@ struct background_rates
 	friend std::ostream& operator<<(std::ostream& output, const background_rates& bg_rates) noexcept
 	{
 		return output << std::setprecision(2)
-					  << "\tLower frequency cutoff:  " << bg_rates.low_frequency_cutoff << '\n'
-					  << "\tError rate:              " << bg_rates.error_rate << '\n'
-					  << "\tGap open:                " << bg_rates.gap_open << '\n'
-					  << "\tGap extend:              " << bg_rates.gap_extend << '\n'
-					  << "\tInsert open:             " << bg_rates.insert_open << '\n'
-					  << "\tInsert extend:           " << bg_rates.insert_extend << '\n'
-					  << "\tEnd prob:                " << bg_rates.end_prob << '\n'
-					  << "\tLeft clip open:          " << bg_rates.left_clip_open << '\n'
-					  << "\tLeft clip extend:        " << bg_rates.left_clip_extend << '\n'
-					  << "\tRight clip open:         " << bg_rates.right_clip_open << '\n'
-					  << "\tRight clip extend:       " << bg_rates.right_clip_extend << '\n';
+					  << "\tNumber of threads -t:    " << num_threads
+					  << "\n\n\tLower frequency cutoff:  " << bg_rates.low_frequency_cutoff
+					  << "\n\tError rate:              " << bg_rates.error_rate
+					  << "\n\tGap open:                " << bg_rates.gap_open
+					  << "\n\tGap extend:              " << bg_rates.gap_extend
+					  << "\n\tInsert open:             " << bg_rates.insert_open
+					  << "\n\tInsert extend:           " << bg_rates.insert_extend
+					  << "\n\tEnd prob:                " << bg_rates.end_prob
+					  << "\n\tLeft clip open:          " << bg_rates.left_clip_open
+					  << "\n\tLeft clip extend:        " << bg_rates.left_clip_extend
+					  << "\n\tRight clip open:         " << bg_rates.right_clip_open
+					  << "\n\tRight clip extend:       " << bg_rates.right_clip_extend << '\n';
 	}
 };
 
@@ -187,7 +190,7 @@ struct reference_genome
 	std::vector<dna_array<bool, 5>> m_table_of_included_bases;
 
 	/* name of reference genome */
-	std::string m_reference_genome_name;
+	std::string m_reference_genome_name = "CONSENSUS";
 
 	/* majority reference sequence */
 	std::string m_majority_ref;
@@ -208,16 +211,19 @@ struct reference_genome
 		const std::vector<dna_array<double, 5>>& allel_freq_,
 		const std::vector<double>& vec_M_to_D_p_,
 		const std::vector<double>& vec_D_to_D_p_,
-		const background_rates& error_rates);
+		const background_rates& error_rates,
+		bool ambig_bases_unequal_weight);
 
 	void set_parameters(
 		const std::string& input_msa,
 		const background_rates& error_rates,
-		uint32_t read_lengths);
+		uint32_t read_lengths,
+		bool ambig_bases_unequal_weight);
 
 	void set_parameters(
 		const std::vector<reference_haplotype>& refs,
-		const background_rates& error_rates);
+		const background_rates& error_rates,
+		bool ambig_bases_unequal_weight);
 
 	bool display_parameters(std::ostream& output, bool fail_on_non_summation = true) const;
 

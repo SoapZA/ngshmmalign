@@ -93,8 +93,7 @@ public:
 			<< std::left << std::setw(3) << "C:" << std::left << std::setw(col_width + 1) << dna_array_['C']
 			<< std::left << std::setw(3) << "G:" << std::left << std::setw(col_width + 1) << dna_array_['G']
 			<< std::left << std::setw(3) << "T:" << std::left << std::setw(col_width + 1) << dna_array_['T']
-			<< std::left << std::setw(3) << "N:" << std::left << std::setw(col_width + 1) << dna_array_['N']
-			<< '\n';
+			<< std::left << std::setw(3) << "N:" << std::left << std::setw(col_width + 1) << dna_array_['N'];
 	}
 };
 
@@ -103,7 +102,7 @@ template <typename T, std::size_t N>
 inline typename dna_array<T, N>::const_reference dna_array<T, N>::operator[](size_type pos) const noexcept
 {
 #ifndef NDEBUG
-	assert((0 <= pos) && (pos < 4));
+	assert((0 <= pos) && (pos < N));
 #endif
 	return m_array[pos];
 }

@@ -146,7 +146,8 @@ void reference_genome<T>::set_parameters(
 	const std::vector<dna_array<double, 5>>& allel_freq_,
 	const std::vector<double>& vec_M_to_D_p_,
 	const std::vector<double>& vec_D_to_D_p_,
-	const background_rates& error_rates)
+	const background_rates& error_rates,
+	const bool ambig_bases_unequal_weight)
 {
 	T(*cast)
 	(const double&) = type_caster<double, T>;
@@ -181,7 +182,10 @@ void reference_genome<T>::set_parameters(
 	}
 
 	std::vector<trans_matrix<double>> float_trans_matrix(m_L);
-	/* Position 0 in pHMM */
+
+	////////////////////////
+	// Position 0 in pHMM //
+	////////////////////////
 	// -> M transitions
 	float_trans_matrix[0].into_match = {
 		(1.0 - error_rates.left_clip_open) / m_L,
@@ -201,7 +205,9 @@ void reference_genome<T>::set_parameters(
 		0.0
 	};
 
-	/* Position 1 in pHMM */
+	////////////////////////
+	// Position 1 in pHMM //
+	////////////////////////
 	double cur_M_to_D = (vec_M_to_D_p_[0] ? vec_M_to_D_p_[0] : error_rates.gap_open);
 	double sum = error_rates.insert_open + cur_M_to_D + error_rates.right_clip_open + error_rates.end_prob;
 	double M_to_M = 1.0 - sum;
@@ -225,6 +231,9 @@ void reference_genome<T>::set_parameters(
 		0.0
 	};
 
+	////////////////////////
+	// Position i in pHMM //
+	////////////////////////
 	double cur_D_to_D;
 	for (typename std::vector<trans_matrix<double>>::size_type i = 2; i < m_L - 1; ++i)
 	{
@@ -259,7 +268,9 @@ void reference_genome<T>::set_parameters(
 		};
 	}
 
-	/* Position L-1 in pHMM */
+	//////////////////////////
+	// Position L-1 in pHMM //
+	//////////////////////////
 	sum = error_rates.insert_open + error_rates.right_clip_open + error_rates.end_prob;
 	M_to_M = 1.0 - sum;
 	assert(M_to_M > 0);
@@ -299,7 +310,9 @@ void reference_genome<T>::set_parameters(
 		};
 	}
 
-	/* emission probabilities */
+	////////////////////////////
+	// emission probabilities //
+	////////////////////////////
 	m_uniform_base_e['A'] = static_cast<T>(log_base(0.25));
 	m_uniform_base_e['N'] = static_cast<T>(log_base(1.0));
 
@@ -307,9 +320,21 @@ void reference_genome<T>::set_parameters(
 	m_E.resize(m_L);
 	m_table_of_included_bases.resize(m_L);
 
-	double temp;
+	// determine majority and ambiguous reference sequence
+	m_majority_ref.clear();
+	m_ambig_ref.clear();
+
+	std::string majority_bases, ambig_bases;
+	std::default_random_engine rng;
+	double max_freq, temp;
+	char majority_base;
+
 	for (typename std::vector<dna_array<double, 5>>::size_type i = 0; i < m_L; ++i)
 	{
+		majority_bases.clear();
+		ambig_bases.clear();
+		max_freq = -1;
+
 		for (char j : { 'A', 'C', 'G', 'T' })
 		{
 			temp = 0;
@@ -317,30 +342,57 @@ void reference_genome<T>::set_parameters(
 			{
 				temp += allel_freq_[i][k] * (j == k ? 1 - error_rates.error_rate : error_rates.error_rate / 3);
 			}
-			m_E[i][j] = static_cast<T>(log_base(temp));
-
+			m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (allel_freq_[i][j] ? 1.0 : temp))));
 			m_table_of_included_bases[i][j] = (allel_freq_[i][j] > error_rates.low_frequency_cutoff);
+
+			// find the majority base
+			if (allel_freq_[i][j] >= max_freq)
+			{
+				if (allel_freq_[i][j] > max_freq)
+				{
+					majority_bases.clear();
+					max_freq = allel_freq_[i][j];
+				}
+
+				majority_bases.push_back(j);
+			}
+
+			// find ambiguous base
+			if (allel_freq_[i][j] > error_rates.low_frequency_cutoff)
+			{
+				ambig_bases.push_back(j);
+			}
 		}
 
 		m_E[i]['N'] = static_cast<T>(log_base(1.0));
 		m_table_of_included_bases[i]['N'] = true;
+
+		majority_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
+
+		m_majority_ref.push_back(majority_base);
+		m_ambig_ref.push_back(ambig_to_wobble_base.find(ambig_bases)->second);
 	}
+
+	std::cout << '\t' << "Size of genome:          " << m_L << " nt\n\n";
+	create_index();
 }
 
 template <typename T>
 void reference_genome<T>::set_parameters(
 	const std::string& input_msa,
 	const background_rates& error_rates,
-	const uint32_t read_lengths)
+	const uint32_t read_lengths,
+	const bool ambig_bases_unequal_weight)
 {
 	read_length_profile = read_lengths;
-	set_parameters(fasta_read<reference_haplotype>(input_msa), error_rates);
+	set_parameters(fasta_read<reference_haplotype>(input_msa), error_rates, ambig_bases_unequal_weight);
 }
 
 template <typename T>
 void reference_genome<T>::set_parameters(
 	const std::vector<reference_haplotype>& refs,
-	const background_rates& error_rates)
+	const background_rates& error_rates,
+	const bool ambig_bases_unequal_weight)
 {
 	std::size_t L = refs[0].sequence.length();
 	const std::vector<reference_haplotype>::size_type num_haps = refs.size();
@@ -385,13 +437,6 @@ void reference_genome<T>::set_parameters(
 	double MD, sumM;
 	double DD, sumD;
 	bool onlyGap;
-
-	std::string majority_bases;
-	double max_freq;
-	std::default_random_engine rng;
-	char majority_base;
-
-	std::string ambig_bases;
 
 	for (std::string::size_type j = 0; j < L; ++j)
 	{
@@ -458,37 +503,11 @@ void reference_genome<T>::set_parameters(
 			exit(EXIT_FAILURE);
 		}
 
-		majority_bases.clear();
-		max_freq = -1;
-		ambig_bases.clear();
 		// renormalize counts
 		for (char k : { 'A', 'C', 'G', 'T' })
 		{
 			E_p[j][k] /= sum;
-
-			// find the majority base
-			if (E_p[j][k] >= max_freq)
-			{
-				if (E_p[j][k] > max_freq)
-				{
-					majority_bases.clear();
-					max_freq = E_p[j][k];
-				}
-
-				majority_bases.push_back(k);
-			}
-
-			// find ambiguous base
-			if (E_p[j][k] >= error_rates.low_frequency_cutoff)
-			{
-				ambig_bases.push_back(k);
-			}
 		}
-
-		majority_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
-		m_majority_ref.push_back(majority_base);
-
-		m_ambig_ref.push_back(ambig_to_wobble_base.find(ambig_bases)->second);
 
 		if (j < L - 1)
 		{
@@ -497,21 +516,7 @@ void reference_genome<T>::set_parameters(
 		}
 	}
 
-	if (num_haps > 1)
-	{
-		// provided an MSA
-		std::ofstream output;
-		output.open("ref_majority.fasta");
-		output << ">CONSENSUS" << '\n' << m_majority_ref << '\n';
-		output.close();
-
-		output.open("ref_ambig.fasta");
-		output << ">CONSENSUS" << '\n' << m_ambig_ref << '\n';
-		output.close();
-
-		m_reference_genome_name = "CONSENSUS";
-	}
-	else
+	if (num_haps == 1)
 	{
 		// provided only one sequence, do not write a consensus sequence
 		m_reference_genome_name = refs.front().name;
@@ -526,10 +531,7 @@ void reference_genome<T>::set_parameters(
 	debug_output.close();
 #endif
 
-	set_parameters(E_p, M_D_p, D_D_p, error_rates);
-
-	std::cout << '\t' << "Size of genome:          " << m_L << " nt\n\n";
-	create_index();
+	set_parameters(E_p, M_D_p, D_D_p, error_rates, ambig_bases_unequal_weight);
 }
 
 // Misc
@@ -711,9 +713,9 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 	output << "\nEmission tables (log):\n";
 	for (const auto& i : m_E)
 	{
-		output << j++ << ":\t" << i;
+		output << j++ << ":\t" << i << '\n';
 	}
-	output << "\nEmission tables (uniform):\n\t" << m_uniform_base_e;
+	output << "\nEmission tables (uniform):\n\t" << m_uniform_base_e << '\n';
 
 	return true;
 }

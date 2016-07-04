@@ -537,7 +537,7 @@ sam_entry hmmalign<T>::viterbi(
 		//
 
 		CIGAR_vec CIGAR;
-		std::stringstream MD_tag;
+		std::ostringstream MD_tag;
 
 		int32_t POS;
 		int32_t left_clip_length = 0;

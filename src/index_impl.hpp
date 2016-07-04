@@ -98,7 +98,7 @@ void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 	};
 
 	bool too_large;
-	for (m_kmer_length = desired_kmer_length; m_kmer_length >= 10; --m_kmer_length)
+	for (m_kmer_length = std::min<decltype(m_kmer_length)>(desired_kmer_length, m_L); m_kmer_length >= 10; --m_kmer_length)
 	{
 		std::cout << "   Building k-mer index, k = " << m_kmer_length;
 		m_kmer_index.clear();
@@ -121,7 +121,7 @@ void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 		}
 		else
 		{
-			std::cout << " -> " << m_kmer_index.size() << '\n';
+			std::cout << " -> " << m_kmer_index.size() << " unique k-mers\n";
 			break;
 		}
 	}
@@ -133,20 +133,23 @@ typename reference_genome<T>::index_stat reference_genome<T>::find_pos(const boo
 	boost::accumulators::accumulator_set<int64_t, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
 	hash_map_type::const_iterator it;
 
-	const std::size_t max_len = query.length() - m_kmer_length + 1;
 	uint32_t num_samples = 0;
 
-	for (std::size_t i = 0; i < max_len; ++i)
+	if (query.length() >= m_kmer_length)
 	{
-		boost::string_ref cur_kmer = query.substr(i, m_kmer_length);
-		it = m_kmer_index.find(cur_kmer, m_kmer_index.hash_function(), m_kmer_index.key_eq());
-
-		if (it != m_kmer_index.end())
+		const std::size_t max_len = query.length() - m_kmer_length + 1;
+		for (std::size_t i = 0; i < max_len; ++i)
 		{
-			for (const auto& j : it->second)
+			boost::string_ref cur_kmer = query.substr(i, m_kmer_length);
+			it = m_kmer_index.find(cur_kmer, m_kmer_index.hash_function(), m_kmer_index.key_eq());
+
+			if (it != m_kmer_index.end())
 			{
-				++num_samples;
-				acc(static_cast<int64_t>(j - i));
+				for (const auto& j : it->second)
+				{
+					++num_samples;
+					acc(static_cast<int64_t>(j - i));
+				}
 			}
 		}
 	}

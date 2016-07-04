@@ -32,6 +32,7 @@
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 #include <boost/progress.hpp>
 #include <boost/accumulators/accumulators.hpp>
@@ -238,20 +239,25 @@ uint32_t single_end_aligner<T>::get_length_profile() const noexcept
 // 1. ctor
 template <typename T>
 std::unique_ptr<single_end_aligner<T>> single_end_aligner<T>::create_aligner_instance(
-	const bool write_unpaired,
 	const std::vector<std::string>& input_files,
 	const int32_t min_mapped_length,
 	const int argc,
-	const char** argv) noexcept
+	const char** argv,
+	const bool write_unpaired) noexcept
 {
 	switch (input_files.size())
 	{
+		case 0:
+			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
+			exit(EXIT_FAILURE);
+			break;
+
 		case 1:
 			return std::unique_ptr<single_end_aligner<T>>(new single_end_aligner<T>(min_mapped_length, argc, argv));
 			break;
 
 		case 2:
-			return std::unique_ptr<single_end_aligner<T>>(new paired_end_aligner<T>(write_unpaired, min_mapped_length, argc, argv));
+			return std::unique_ptr<single_end_aligner<T>>(new paired_end_aligner<T>(min_mapped_length, argc, argv, write_unpaired));
 			break;
 
 		default:
@@ -274,10 +280,10 @@ single_end_aligner<T>::single_end_aligner(
 
 template <typename T>
 paired_end_aligner<T>::paired_end_aligner(
-	const bool write_unpaired,
 	const int32_t min_mapped_length_,
 	const int argc_,
-	const char** argv_) noexcept
+	const char** argv_,
+	const bool write_unpaired) noexcept
 	: single_end_aligner<T>(min_mapped_length_, argc_, argv_),
 	  m_write_unpaired(write_unpaired)
 {
@@ -327,7 +333,8 @@ void paired_end_aligner<T>::load_reads_impl(
 template <typename T>
 void single_end_aligner<T>::load_parameters(
 	const std::string& msa_input_file,
-	background_rates& error_rates) noexcept
+	background_rates& error_rates,
+	const bool ambig_bases_unequal_weight) noexcept
 {
 	std::cout << ++m_phase << ") ";
 	std::string ref_ext(boost::filesystem::extension(msa_input_file));
@@ -365,7 +372,8 @@ void single_end_aligner<T>::load_parameters(
 	m_parameters.set_parameters(
 		m_msa_input_file,
 		error_rates,
-		L);
+		L,
+		ambig_bases_unequal_weight);
 }
 
 // 4. sort reads
@@ -402,13 +410,24 @@ struct partioned_genome
 		int32_t m_analysis_start;
 		int32_t m_analysis_end;
 
+		std::string m_files_dir;
 		std::vector<const read_entry*> m_reads;
 
-		region(const int32_t start_, const int32_t end_, const int32_t analysis_start_, const int32_t analysis_end_) noexcept
+		region(const int32_t start_, const int32_t end_, const int32_t analysis_start_, const int32_t analysis_end_, const std::string& tmpdir, const int32_t num_digits) noexcept
 			: m_start(start_),
 			  m_end(end_),
 			  m_analysis_start(analysis_start_),
-			  m_analysis_end(analysis_end_) {}
+			  m_analysis_end(analysis_end_)
+		{
+			std::ostringstream file_dir;
+			file_dir
+				<< tmpdir
+				<< "/reads_"
+				<< std::setw(num_digits) << std::setfill('0') << m_start
+				<< "_"
+				<< std::setw(num_digits) << std::setfill('0') << m_end;
+			m_files_dir = file_dir.str();
+		}
 	};
 	std::vector<region> m_regions;
 	const int32_t m_offset;
@@ -420,45 +439,30 @@ struct partioned_genome
 	partioned_genome& operator=(const partioned_genome& other) = delete;
 	partioned_genome& operator=(partioned_genome&& other) = delete;
 
-	partioned_genome(const int32_t L, const int32_t read_profile) noexcept
+	partioned_genome(const std::string& tmpdir, const int32_t L, const int32_t read_profile) noexcept
 		: m_offset(read_profile / 6),
 		  m_num_bins(L / m_offset)
 	{
 		m_regions.reserve(m_num_bins);
+		const int32_t num_digits = std::to_string(L).length();
 
 		for (int32_t i = 0; i < L - read_profile; i += m_offset)
 		{
 			const int32_t end = std::min<int32_t>(L, i + m_offset + read_profile);
-			m_regions.emplace_back(i, end, i + 3 * m_offset, i + 4 * m_offset);
-
-			//std::cout
-			//	<< "Start:          " << m_regions.back().m_start << '\n'
-			//	<< "End:            " << m_regions.back().m_end << '\n'
-			//	<< "Start Analysis: " << m_regions.back().m_analysis_start << '\n'
-			//	<< "End Analysis:   " << m_regions.back().m_analysis_end << '\n'
-			//	<< '\n';
+			m_regions.emplace_back(i, end, i + 3 * m_offset, i + 4 * m_offset, tmpdir, num_digits);
 		}
-
-		//exit(0);
 	}
 
 	void add_reads(const std::vector<read_entry>& reads, std::default_random_engine& generator) noexcept
 	{
-		uint64_t num_unique_assignments = 0;
-		uint64_t num_multiple_assignments = 0;
-		uint64_t num_no_assignments = 0;
+		//uint64_t num_unique_assignments = 0;
+		//uint64_t num_multiple_assignments = 0;
+		//uint64_t num_no_assignments = 0;
 
 		for (const auto& read : reads)
 		{
 			const auto start = read.m_sam_record.POS - read.m_sam_record.m_left_clip_length;
 			const auto end = read.m_sam_record.POS + read.m_sam_record.m_segment_length + read.m_sam_record.m_right_clip_length;
-
-			//auto overlap = [](int32_t x_start, int32_t y_start, int32_t x_end, int32_t y_end) -> int32_t
-			//{
-			//	return std::min(x_end, y_end) - std::max(x_start, y_start);
-			//};
-
-			//std::cout << " on genome Start:\t" << start << " - " << end << '\n';
 
 			std::vector<int32_t> candidate_regions;
 			for (int32_t i = start / m_offset; i >= 0; --i)
@@ -466,7 +470,6 @@ struct partioned_genome
 				if ((m_regions.at(i).m_start <= start) && (end <= m_regions.at(i).m_end))
 				{
 					candidate_regions.push_back(i);
-					//std::cout << "Start: " << m_regions.at(i).m_start << "\tStop: " << m_regions.at(i).m_end << '\n';
 				}
 				else
 				{
@@ -480,74 +483,311 @@ struct partioned_genome
 				int32_t rand_assignment = std::uniform_int_distribution<int32_t>(0, candidate_regions.size() - 1)(generator);
 				m_regions[candidate_regions[rand_assignment]].m_reads.push_back(&read);
 
-				if (candidate_regions.size() == 1)
-				{
-					++num_unique_assignments;
-				}
-				else
-				{
-					++num_multiple_assignments;
-				}
-
-				//std::cout
-				//	<< "using region "
-				//	<< m_regions.at(candidate_regions.at(rand_assignment)).m_start
-				//	<< " - "
-				//	<< m_regions.at(candidate_regions.at(rand_assignment)).m_end;
+				//if (candidate_regions.size() == 1)
+				//{
+				//	++num_unique_assignments;
+				//}
+				//else
+				//{
+				//	++num_multiple_assignments;
+				//}
 			}
-			else
-			{
-				++num_no_assignments;
-				// found no region
-				//std::cerr << "Read starting " << start << "-" << end << " could not be assigned a candidate region\n";
-				//std::cout << "Found no optimal region!";
-			}
-
-			//std::cout << '\n' << '\n';
+			//else
+			//{
+			//	++num_no_assignments;
+			//}
 		}
 
-		std::cout
-			<< "Unique:   " << num_unique_assignments << '\n'
-			<< "Multiple: " << num_multiple_assignments << '\n'
-			<< "None:     " << num_no_assignments << '\n';
+		//std::cout
+		//	<< "Unique:   " << num_unique_assignments << '\n'
+		//	<< "Multiple: " << num_multiple_assignments << '\n'
+		//	<< "None:     " << num_no_assignments << '\n';
 	}
 
-	void write_out_regions(const std::string& tmpdir, const std::string& reference) const noexcept
+	void shuffle_reads(const int32_t max_reads_to_sample, std::default_random_engine& generator) noexcept
+	{
+		for (auto& i : m_regions)
+		{
+			// 1. shuffle reads, for (sub)-sampling
+			const int32_t num_reads = i.m_reads.size();
+			if (num_reads > max_reads_to_sample)
+			{
+				for (int32_t j = 0; j < max_reads_to_sample; ++j)
+				{
+					const int32_t rand_swap = std::uniform_int_distribution<int32_t>(j, num_reads - 1)(generator);
+					std::swap(i.m_reads[j], i.m_reads[rand_swap]);
+				}
+			}
+		}
+	}
+
+	void write_out_regions(const std::string& reference, const int32_t max_reads_to_sample) const noexcept
 	{
 		for (const auto& i : m_regions)
 		{
-			const std::string output_dir(tmpdir + "/reg_" + std::to_string(i.m_start) + "_" + std::to_string(i.m_end));
-			boost::filesystem::create_directories(output_dir);
-			std::ofstream output(output_dir + "/reads.fasta");
+			boost::filesystem::create_directories(i.m_files_dir);
 
-			output << ">REF\n" << reference.substr(i.m_start, i.m_end - i.m_start);
-
-			for (const auto& j : i.m_reads)
+			const int32_t max_num_reads = std::min<int32_t>(i.m_reads.size(), max_reads_to_sample);
+			std::ofstream output(i.m_files_dir + "/reads.fasta");
+			for (int32_t j = 0; j < max_num_reads; ++j)
 			{
-				output << "\n>" << j->m_fastq_record.m_id << '\n';
-				j->print_sequence(output, false);
+				output << '>' << i.m_reads[j]->m_fastq_record.m_id << '\n';
+				i.m_reads[j]->print_sequence(output, false);
+				output << '\n';
 			}
-			output << '\n';
+			output << ">REF\n" << reference.substr(i.m_start, i.m_end - i.m_start) << '\n';
 			output.close();
+		}
+	}
+
+	void run_mafft_on_files(const std::string& mafft, const int32_t num_threads) const noexcept
+	{
+		std::cout << "Running MAFFT on region\n";
+		for (const auto& i : m_regions)
+		{
+			std::ostringstream mafft_cmd_line;
+			mafft_cmd_line
+				<< mafft
+				<< " --thread " << num_threads
+				<< " --localpair --maxiterate 1000 --quiet "
+				<< i.m_files_dir << "/reads.fasta > "
+				<< i.m_files_dir << "/reads_aln.fasta";
+
+			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << '\n';
+			int result = std::system(mafft_cmd_line.str().c_str());
+
+			if (result != 0)
+			{
+				std::cerr << "ERROR: MAFFT exited with error code " << result << '\n';
+				exit(EXIT_FAILURE);
+			}
+		}
+	}
+
+	void construct_new_reference(
+		const double min_base_cov,
+		const double min_base_cutoff,
+		std::vector<dna_array<double, 5>>& E_p,
+		std::vector<double>& M_D_p,
+		std::vector<double>& D_D_p) const noexcept
+	{
+		E_p.clear();
+		E_p.reserve(1.2 * m_regions.back().m_end);
+
+		M_D_p.clear();
+		M_D_p.reserve(1.2 * m_regions.back().m_end);
+
+		D_D_p.clear();
+		D_D_p.reserve(1.2 * m_regions.back().m_end);
+
+		//uint64_t r = 0;
+
+		std::cout << "Processing MAFFT aligned files\n" << std::fixed;
+		for (const auto& i : m_regions)
+		{
+			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << '\n';
+
+			// 0. load aligned MSA
+			std::vector<reference_haplotype> msa_reads(fasta_read<reference_haplotype>(i.m_files_dir + "/reads_aln.fasta"));
+			if (msa_reads.empty())
+			{
+				// no reads in alignment
+				msa_reads = fasta_read<reference_haplotype>(i.m_files_dir + "/reads.fasta");
+			}
+			const reference_haplotype ref_seq(msa_reads.back());
+
+			if (msa_reads.size() > 1)
+			{
+				msa_reads.pop_back();
+			}
+
+			if (ref_seq.name != "REF")
+			{
+				std::cerr << "ERROR: Last sequence in " << i.m_files_dir << "/reads_aln.fasta is not the reference!\n";
+				exit(EXIT_FAILURE);
+			}
+
+			// 1. collect statistics
+			const int32_t total_length_of_MSA = ref_seq.sequence.length();
+			std::vector<uint32_t> coverage(total_length_of_MSA, 0);
+			std::vector<uint32_t> nongap_coverage(total_length_of_MSA, 0);
+			std::vector<dna_array<double, 5>> base_dist(total_length_of_MSA, { 0.0, 0.0, 0.0, 0.0, 0.0 });
+
+			for (int32_t j = 0; j < total_length_of_MSA; ++j)
+			{
+				for (const auto& k : msa_reads)
+				{
+					if ((k.start <= j) && (j < k.end))
+					{
+						++coverage[j];
+						char base = k.sequence[j];
+						if (base != '-')
+						{
+							// base
+							++nongap_coverage[j];
+							++base_dist[j][base];
+						}
+					}
+				}
+			}
+
+			// 2. find start of region with respect to reference
+			// The offsets form a CLOSED interval, which is unlike
+			// what ngshmmalign usually uses, namely half-open intervals
+			int32_t ref_start = 0;
+			if (i.m_start != m_regions.front().m_start)
+			{
+				// not the first region
+				int32_t found_bases = 0;
+				while (found_bases <= (i.m_analysis_start - i.m_start))
+				{
+					found_bases += (ref_seq.sequence[ref_start] != '-');
+					++ref_start;
+				}
+				--ref_start;
+			}
+
+			int32_t ref_end = total_length_of_MSA - 1;
+			if (i.m_end != m_regions.back().m_end)
+			{
+				// not the last region
+				int32_t found_bases = 0;
+				while (found_bases <= (i.m_end - i.m_analysis_end - 1))
+				{
+					found_bases += (ref_seq.sequence[ref_end] != '-');
+					--ref_end;
+				}
+				++ref_end;
+			}
+
+			// 3. find all valid loci in the MSA region
+			// TODO: add more adaptive and intelligent
+			// homopolymer detector
+			std::vector<int32_t> valid_loci;
+			valid_loci.reserve(ref_end - ref_start + 1);
+			for (int32_t j = ref_start; j <= ref_end; ++j)
+			{
+				if ((static_cast<double>(nongap_coverage[j]) / coverage[j]) > min_base_cov)
+				{
+					valid_loci.push_back(j);
+				}
+			}
+
+			// 4. determine parameters
+			auto renormalize_dist = [min_base_cutoff](dna_array<double, 5>& allel_freq) -> void
+			{
+				const double first_sum = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
+				for (char k : { 'A', 'C', 'G', 'T' })
+				{
+					if (allel_freq[k] / first_sum < min_base_cutoff)
+					{
+						allel_freq[k] = 0;
+					}
+				}
+
+				const double second_sum = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
+				for (char k : { 'A', 'C', 'G', 'T' })
+				{
+					allel_freq[k] /= second_sum;
+				}
+			};
+
+			for (int32_t j = 0; j < valid_loci.size() - 1; ++j)
+			{
+				const int32_t left_locus = valid_loci[j];
+				const int32_t right_locus = valid_loci[j + 1];
+
+				double num_M = 0;
+				double num_M_D = 0;
+
+				double num_D = 0;
+				double num_D_D = 0;
+
+				for (const auto& k : msa_reads)
+				{
+					if ((k.start <= left_locus) && (right_locus < k.end))
+					{
+						double& count = ((k.sequence[left_locus] == '-') ? (++num_D, num_D_D) : (++num_M, num_M_D));
+						count += (k.sequence[right_locus] == '-');
+					}
+				}
+
+				num_M += (!num_M);
+				if ((num_M_D / num_M < 0.05) || (num_M < 10))
+				{
+					num_M_D = 0;
+				}
+
+				num_D += (!num_D);
+				if ((num_D_D / num_D < 0.05) || (num_D < 10))
+				{
+					num_D_D = 0;
+				}
+
+				renormalize_dist(base_dist[left_locus]);
+				E_p.push_back(base_dist[left_locus]);
+				M_D_p.push_back(num_M_D / num_M);
+				D_D_p.push_back(num_D_D / num_D);
+
+				if ((i.m_end == m_regions.back().m_end) && (right_locus == valid_loci.back()))
+				{
+					// deal with the last global position
+					renormalize_dist(base_dist[right_locus]);
+					E_p.push_back(base_dist[right_locus]);
+				}
+			}
 		}
 	}
 };
 
 template <typename T>
-void single_end_aligner<T>::estimate_parameters(uint64_t seed, bool verbose) noexcept
+void single_end_aligner<T>::estimate_parameters(
+	const std::string& mafft,
+	const background_rates& error_rates,
+	const uint64_t seed,
+	const bool verbose,
+	const bool keep_mafft_files,
+	const bool ambig_bases_unequal_weight) noexcept
 {
 	// 1. perform rough alignment first
-	std::cout << ++m_phase << ") Performing first alignment with -t = " << no_threads << " threads\n";
+	std::cout << ++m_phase << ") Performing first rough alignment\n";
 	perform_alignment_impl(clip_mode::soft, seed, false, verbose, false);
 
 	// 2. chop up genome and extract reads
 	std::default_random_engine rng(seed);
-	partioned_genome separated_reads(m_parameters.m_L, m_parameters.read_length_profile);
+	constexpr const char* tmpdir_root = "./TMP";
+	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
 	estimate_parameters_impl(separated_reads, rng);
 
-	separated_reads.write_out_regions("./TMP", m_parameters.m_ambig_ref);
+	// 3. shuffle reads for subsampling
+	constexpr int32_t max_reads = 500;
+	separated_reads.shuffle_reads(max_reads, rng);
 
-	exit(0);
+	// 4. write reads to FASTA files
+	separated_reads.write_out_regions(m_parameters.m_ambig_ref, max_reads);
+
+	// 5. run MAFFT on regions
+	separated_reads.run_mafft_on_files(mafft, num_threads);
+
+	// 6. parse MAFFT alignments
+	std::vector<dna_array<double, 5>> E_p;
+	std::vector<double> M_D_p;
+	std::vector<double> D_D_p;
+	separated_reads.construct_new_reference(
+		0.05,
+		error_rates.low_frequency_cutoff,
+		E_p,
+		M_D_p,
+		D_D_p);
+
+	m_parameters.m_reference_genome_name = "CONSENSUS";
+	m_parameters.set_parameters(E_p, M_D_p, D_D_p, error_rates, ambig_bases_unequal_weight);
+
+	// 7. (optional) cleanup temporary MAFFT files
+	if (keep_mafft_files == false)
+	{
+		boost::filesystem::remove_all(tmpdir_root);
+	}
 }
 
 template <typename T>
@@ -844,7 +1084,7 @@ void single_end_aligner<T>::perform_alignment(
 	const bool verbose,
 	const bool differentiate_match_state) noexcept
 {
-	std::cout << ++m_phase << ") Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping) with -t = " << no_threads << " threads\n";
+	std::cout << ++m_phase << ") Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping)\n";
 	if (seed)
 	{
 		std::cout << "   Using provided seed " << seed << " for deterministic alignment\n";
@@ -856,14 +1096,16 @@ void single_end_aligner<T>::perform_alignment(
 	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 	perform_alignment_impl(clip, seed, exhaustive, verbose, differentiate_match_state);
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	double duration = std::chrono::duration_cast<std::chrono::seconds>(end - start).count();
+	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() / 1E9;
+	const double performance = number_of_reads() / duration;
+
 	std::cout
 		<< "   Alignment took "
 		<< static_cast<uint32_t>(duration) / 3600 << "h "
 		<< (static_cast<uint32_t>(duration) / 60) % 60 << "min "
 		<< static_cast<uint32_t>(duration) % 60 << "s ("
 		<< std::fixed << std::setprecision(1)
-		<< number_of_reads() / (duration * no_threads) << " reads/thread/s).\n";
+		<< performance / num_threads << " reads/thread/s, " << performance << " reads/s).\n";
 }
 
 template <typename T>
@@ -903,13 +1145,28 @@ void single_end_aligner<T>::write_alignment_to_file(
 	std::cout << ++m_phase << ") Writing ";
 	write_alignment_to_file_impl(output_file_name, rejects_file_name);
 	std::cout << '\n';
+
+	if (m_parameters.m_reference_genome_name == "CONSENSUS")
+	{
+		// provided an MSA
+		std::cout << "   Writing new reference sequences\n";
+
+		std::ofstream output;
+		output.open("ref_majority.fasta");
+		output << ">CONSENSUS" << '\n' << m_parameters.m_majority_ref << '\n';
+		output.close();
+
+		output.open("ref_ambig.fasta");
+		output << ">CONSENSUS" << '\n' << m_parameters.m_ambig_ref << '\n';
+		output.close();
+	}
 }
 
 void write_header(
 	std::ostream& output,
 	const std::string& genome_name,
-	const int profile_length,
-	const int argc,
+	const int32_t profile_length,
+	const int32_t argc,
 	const char** argv) noexcept
 {
 	output

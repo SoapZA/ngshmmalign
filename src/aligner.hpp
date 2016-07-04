@@ -32,7 +32,7 @@
 #include "hmmalign.hpp"
 #include "sam.hpp"
 
-extern int no_threads;
+extern int num_threads;
 
 namespace
 {
@@ -94,7 +94,7 @@ template <typename T>
 class single_end_aligner
 {
 public:
-	static std::unique_ptr<single_end_aligner<T>> create_aligner_instance(bool write_unpaired, const std::vector<std::string>& input_files, int32_t min_mapped_length, int argc, const char** argv) noexcept;
+	static std::unique_ptr<single_end_aligner<T>> create_aligner_instance(const std::vector<std::string>& input_files, int32_t min_mapped_length, int argc, const char** argv, bool write_unpaired) noexcept;
 
 	// 1. ctor
 	single_end_aligner(int32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
@@ -109,13 +109,13 @@ public:
 	void load_reads(const std::vector<std::string>& input_files) noexcept;
 
 	// 3. load parameters
-	void load_parameters(const std::string& msa_input_file, background_rates& error_rates) noexcept;
+	void load_parameters(const std::string& msa_input_file, background_rates& error_rates, bool ambig_bases_unequal_weight) noexcept;
 
 	// 4. sort reads
 	void sort_reads() noexcept;
 
 	// 5. perform parameter estimation
-	void estimate_parameters(uint64_t seed, bool verbose) noexcept;
+	void estimate_parameters(const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight) noexcept;
 
 	// 6. perform alignment
 	void perform_alignment(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
@@ -168,7 +168,7 @@ class paired_end_aligner : public single_end_aligner<T>
 {
 public:
 	// 1. ctor
-	paired_end_aligner(bool write_unpaired, int32_t min_mapped_length_, int argc_, const char** argv_) noexcept;
+	paired_end_aligner(int32_t min_mapped_length_, int argc_, const char** argv_, bool write_unpaired) noexcept;
 
 	paired_end_aligner() = delete;
 	paired_end_aligner(const paired_end_aligner& other) = delete;

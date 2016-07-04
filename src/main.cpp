@@ -38,7 +38,7 @@
 #include "reference.hpp"
 #include "aligner.hpp"
 
-int no_threads;
+int num_threads;
 
 int main(int argc, const char* argv[])
 {
@@ -67,10 +67,12 @@ int main(int argc, const char* argv[])
 		(",R", boost::program_options::value<decltype(profile_filename)>(&profile_filename), "File containing the profile/MSA of the reference. Will perform a comprehensive parameter estimation using MAFFT. Mutually exclusive with -r option")
 		(",o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
 		("wrong,w", boost::program_options::value<decltype(rejects_filename)>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
-		(",t", boost::program_options::value<decltype(no_threads)>(&no_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
+		(",t", boost::program_options::value<decltype(num_threads)>(&num_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
 		(",u", "Keep unpaired reads")
+		(",l", "Do not clean up MAFFT temporary MSA files")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
+		(",U", "Loci with ambiguous bases get their emission probabilities according to their allele frequencies. In practice this is undesirable, as it leads to systematic accumulation of gaps in homopolymeric regions with SNVs")
 		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(42), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
 		("hard", "Hard-clip reads. Clipped bases will NOT be in the sequence in the alignment")
 		("HARD", "Extreme Hard-clip reads. Do not write hard-clip in CIGAR, as if the hard-clipped bases never existed. Mutually exclusive with previous option")
@@ -144,7 +146,9 @@ int main(int argc, const char* argv[])
 	const bool exhaustive = global_options.count("-E");
 	const bool verbose = global_options.count("-v");
 	const bool differentiate_match_state = global_options.count("-X");
+	const bool ambig_bases_unequal_weight = global_options.count("-U");
 	const bool perform_hmm_learning = global_options.count("-R");
+	const bool keep_mafft_files = global_options.count("-l");
 
 	switch (global_options.count("-r") + perform_hmm_learning)
 	{
@@ -173,9 +177,6 @@ int main(int argc, const char* argv[])
 
 		int result = std::system((mafft + " --help > /dev/null 2>&1").c_str());
 
-		//std::cout << "Result: " << WEXITSTATUS(result) << '\n';
-		//std::cout << (env_var ? "Using ENV variable" : "Using PATH for lookup") << '\n';
-
 		switch (WEXITSTATUS(result))
 		{
 			case 0:
@@ -188,7 +189,7 @@ int main(int argc, const char* argv[])
 				exit(EXIT_FAILURE);
 
 			default:
-				std::cout << "ERROR: Unknown exit code returned.\n";
+				std::cerr << "ERROR: Unknown exit code returned.\n";
 				exit(EXIT_FAILURE);
 		}
 	}
@@ -209,7 +210,7 @@ int main(int argc, const char* argv[])
 	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
 	// set OpenMP properties
-	omp_set_num_threads(no_threads);
+	omp_set_num_threads(num_threads);
 	if (random_seed)
 	{
 		// deterministic
@@ -228,13 +229,13 @@ int main(int argc, const char* argv[])
 	}
 
 	/* 0.2) create HMM aligner object */
-	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(write_unpaired, input_files, min_mapped_length, argc, argv);
+	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(input_files, min_mapped_length, argc, argv, write_unpaired);
 
 	/* 1) load reads */
 	ngs_aligner->load_reads(input_files);
 
 	/* 2) load parameters */
-	ngs_aligner->load_parameters(profile_filename, params);
+	ngs_aligner->load_parameters(profile_filename, params, ambig_bases_unequal_weight);
 
 	/* 3) sort reads */
 	ngs_aligner->sort_reads();
@@ -242,7 +243,7 @@ int main(int argc, const char* argv[])
 	/* 4) perform parameter estimation */
 	if (perform_hmm_learning)
 	{
-		ngs_aligner->estimate_parameters(random_seed, verbose);
+		ngs_aligner->estimate_parameters(mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight);
 	}
 
 	/* 5) perform alignment */

@@ -69,7 +69,8 @@ int main()
 			left_clip_open,
 			left_clip_extend,
 			right_clip_open,
-			right_clip_extend });
+			right_clip_extend },
+		true);
 	fp_pp.display_parameters(std::cout);
 
 	reference_genome<int32_t> int_pp;
@@ -88,7 +89,8 @@ int main()
 			left_clip_open,
 			left_clip_extend,
 			right_clip_open,
-			right_clip_extend });
+			right_clip_extend },
+		true);
 	int_pp.display_parameters(std::cout);
 
 	reference_genome<fp_type> fp_pp_convert1(int_pp);

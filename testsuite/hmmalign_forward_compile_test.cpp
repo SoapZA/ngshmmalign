@@ -54,7 +54,8 @@ int main()
 			left_clip_open,
 			left_clip_extend,
 			right_clip_open,
-			right_clip_extend });
+			right_clip_extend },
+		true);
 
 	std::vector<std::string> string_vector_1base{
 		"A", "C", "G", "T"
