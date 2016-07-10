@@ -29,6 +29,7 @@
 #include <boost/utility/string_ref.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 
+#include "reference.hpp"
 #include "hmmalign.hpp"
 #include "sam.hpp"
 
@@ -109,7 +110,7 @@ public:
 	void load_reads(const std::vector<std::string>& input_files) noexcept;
 
 	// 3. load parameters
-	void load_parameters(const std::string& msa_input_file, background_rates& error_rates, bool ambig_bases_unequal_weight) noexcept;
+	void load_parameters(const std::string& input_file, background_rates& error_rates, bool ambig_bases_unequal_weight) noexcept;
 
 	// 4. sort reads
 	void sort_reads() noexcept;
@@ -118,7 +119,7 @@ public:
 	void estimate_parameters(const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight) noexcept;
 
 	// 6. perform alignment
-	void perform_alignment(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
+	void perform_alignment(const std::string& reference_genome_name, clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
 	// 7. write alignment to output
 	void write_alignment_to_file(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
@@ -158,9 +159,8 @@ protected:
 	std::vector<read_entry> m_reads;
 
 	// profile HMM relevant members
-	std::string m_msa_input_file;
-	hmmalign<T> m_profile_hmm;
 	reference_genome<T> m_parameters;
+	bool serialize = false;
 };
 
 template <typename T>
@@ -211,7 +211,6 @@ private:
 	using single_end_aligner<T>::m_read_file_name;
 	using single_end_aligner<T>::m_reads;
 
-	using single_end_aligner<T>::m_profile_hmm;
 	using single_end_aligner<T>::m_parameters;
 };
 }

@@ -43,33 +43,22 @@ template <typename T>
 class hmmalign
 {
 public:
-	// Constructors:
-	hmmalign() = default;
-
-	hmmalign(const hmmalign& other) = default;
-	hmmalign(hmmalign&& other) = default;
-	hmmalign& operator=(const hmmalign& other) = default;
-	hmmalign& operator=(hmmalign&& other) = default;
-
-	// Destructors:
-	~hmmalign() = default;
-
 	// MARGINAL PROBABILITY of a sequence
-	T logLik(const reference_genome<T>& parameters, const boost::string_ref& sequence) const;
+	static T logLik(const reference_genome<T>& parameters, const boost::string_ref& sequence);
 
-	inline T Lik(const reference_genome<T>& parameters, const boost::string_ref& sequence) const
+	static inline T Lik(const reference_genome<T>& parameters, const boost::string_ref& sequence)
 	{
 		return exp_base(logLik(parameters, sequence));
 	}
 
 	// OPTIMAL ALIGNMENT of a sequence
-	sam_entry viterbi(
+	static sam_entry viterbi(
 		const reference_genome<T>& parameters,
 		const boost::string_ref& sequence,
 		std::default_random_engine& generator,
 		uint32_t start,
 		uint32_t end,
-		bool differentiate_match_state) const;
+		bool differentiate_match_state);
 };
 }
 

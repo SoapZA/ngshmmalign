@@ -22,6 +22,7 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 - Takes either single-end or paired-end reads as input.
 - Writes the alignment into a fully compliant SAM file, that passes Picard (http://broadinstitute.github.io/picard/) validation.
 - Produces both a consensus reference containing ambiguous bases (e.g. A + G = R) and a reference where bases are determined by majority vote.
+- Serializes the (inferred) profile HMM transition and base emission tables in order to reuse for future alignments.
 - Picks a _random_ optimal alignment. All currently known aligners pick an optimal alignment deterministically. While such a strategy makes sense for many situations, it might not be optimal for small viruses. Many viruses for instance have stretches of the same base, also known as homopolymers. Homopolymers can lead to problems, as the deletion probability increases disproportionately in such regions. Imagine having a homopolymeric stretch and some erroneous (lacking one base in the homopolymer) NGS reads. In such cases **bwa** produces the following alignment:
 <p align="center">
 	<img src="img/bwa_gaps.png?raw=true"/>

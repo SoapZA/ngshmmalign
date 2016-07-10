@@ -42,7 +42,7 @@ namespace
 template <typename T>
 T hmmalign<T>::logLik(
 	const reference_genome<T>& parameters,
-	const boost::string_ref& sequence) const
+	const boost::string_ref& sequence)
 {
 	static_assert(std::is_floating_point<T>::value, "T needs to be a floating point type!\n");
 	using genome_index_type = typename std::vector<typename reference_genome<T>::template trans_matrix<T>>::size_type;
@@ -137,7 +137,7 @@ sam_entry hmmalign<T>::viterbi(
 	std::default_random_engine& generator,
 	const uint32_t ref_start,
 	const uint32_t ref_end,
-	const bool differentiate_match_state) const
+	const bool differentiate_match_state)
 {
 	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 	using genome_index_type = typename std::vector<typename reference_genome<T>::template trans_matrix<T>>::size_type;

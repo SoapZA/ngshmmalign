@@ -64,7 +64,7 @@ dnl Set CXXFLAGS, CPPFLAGS and LDFLAGS
 dnl ==================================
 AS_IF([test "x${enable_flags_setting}" = "xyes" && test "x${enable_debug}" = "xno"],
 	[
-	AX_APPEND_COMPILE_FLAGS([${cxxflags_test} -Wall -Wno-redeclared-class-member], [CXXFLAGS])
+	AX_APPEND_COMPILE_FLAGS([${cxxflags_test} -Wall -Wno-redeclared-class-member -Wno-unused-local-typedef], [CXXFLAGS])
 	CXXFLAGS=$( echo ${CXXFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
 	
 	AX_APPEND_COMPILE_FLAGS([${cppflags_test}], [CPPFLAGS])

@@ -34,6 +34,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/progress.hpp>
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics.hpp>
@@ -332,22 +333,11 @@ void paired_end_aligner<T>::load_reads_impl(
 // 3. load parameters
 template <typename T>
 void single_end_aligner<T>::load_parameters(
-	const std::string& msa_input_file,
+	const std::string& input_file,
 	background_rates& error_rates,
 	const bool ambig_bases_unequal_weight) noexcept
 {
-	std::cout << ++m_phase << ") ";
-	std::string ref_ext(boost::filesystem::extension(msa_input_file));
-	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
-	{
-		std::cout << "Loading profile HMM parameters from FASTA file.\n";
-	}
-	else
-	{
-		std::cerr << "ERROR: file ending" << ref_ext << " not recognized.\n";
-		exit(EXIT_FAILURE);
-	}
-	m_msa_input_file = msa_input_file;
+	std::cout << ++m_phase << ") Loading profile HMM parameters\n";
 
 	uint32_t L = get_length_profile();
 	std::cout << "   Using Illumina length profile " << L << "\n   Parameters for pHMM:\n";
@@ -356,24 +346,53 @@ void single_end_aligner<T>::load_parameters(
 	{
 		error_rates.end_prob = 1.0 / L;
 	}
-
 	if (error_rates.right_clip_open == MAGIC_NUMBER)
 	{
 		error_rates.right_clip_open = error_rates.left_clip_open / L;
 	}
-
 	if (m_min_mapped_length == std::numeric_limits<decltype(m_min_mapped_length)>::max())
 	{
 		m_min_mapped_length = (L * 4) / 5;
 	}
-
 	std::cout << '\n' << error_rates << '\t' << "Minimum mapped length:   " << m_min_mapped_length << "\n\n";
 
-	m_parameters.set_parameters(
-		m_msa_input_file,
-		error_rates,
-		L,
-		ambig_bases_unequal_weight);
+	std::string ref_ext(boost::filesystem::extension(input_file));
+	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
+	{
+		std::cout << "   Input = FASTA\n";
+		m_parameters.set_parameters(
+			input_file,
+			error_rates,
+			L,
+			ambig_bases_unequal_weight,
+			typename reference_genome<T>::msa_input{});
+	}
+	else if (ref_ext == ".hmm")
+	{
+		std::cout << "   Input = " PACKAGE " serialised format\n";
+		m_parameters.set_parameters(
+			input_file,
+			error_rates,
+			L,
+			ambig_bases_unequal_weight,
+			typename reference_genome<T>::serialized_input{});
+	}
+	else
+	{
+		std::cerr << "ERROR: file ending" << ref_ext << " not recognized\n";
+		exit(EXIT_FAILURE);
+	}
+
+	if (m_parameters.m_reference_genome_name.empty())
+	{
+		// have a multiple sequence alignment
+		serialize = true;
+	}
+	else
+	{
+		// only a single reference sequence given
+		serialize = false;
+	}
 }
 
 // 4. sort reads
@@ -780,8 +799,9 @@ void single_end_aligner<T>::estimate_parameters(
 		M_D_p,
 		D_D_p);
 
-	m_parameters.m_reference_genome_name = "CONSENSUS";
-	m_parameters.set_parameters(E_p, M_D_p, D_D_p, error_rates, ambig_bases_unequal_weight);
+	m_parameters.m_reference_genome_name.clear();
+	serialize = true;
+	m_parameters.set_parameters(std::move(E_p), std::move(M_D_p), std::move(D_D_p), error_rates, ambig_bases_unequal_weight);
 
 	// 7. (optional) cleanup temporary MAFFT files
 	if (keep_mafft_files == false)
@@ -820,7 +840,6 @@ template <typename T, typename std::enable_if<std::is_floating_point<T>::value, 
 void alignment_impl(
 	std::vector<read_entry>& reads,
 	const reference_genome<T>& parameters,
-	const hmmalign<T>& profile_hmm,
 	const clip_mode clip,
 	const uint64_t seed,
 	const bool exhaustive,
@@ -852,7 +871,6 @@ template <typename T, typename std::enable_if<std::is_integral<T>::value, int>::
 void alignment_impl(
 	std::vector<read_entry>& reads,
 	const reference_genome<T>& parameters,
-	const hmmalign<T>& profile_hmm,
 	const clip_mode clip,
 	const uint64_t seed,
 	const bool exhaustive,
@@ -965,7 +983,6 @@ void alignment_impl(
 				&alignment_stats,
 #endif
 				&parameters,
-				&profile_hmm,
 				&rng](sam_entry& sam_alignment, const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, bool differentiate_match_state)
 			{
 				int32_t POS;
@@ -1005,7 +1022,7 @@ void alignment_impl(
 #endif
 				}
 
-				sam_alignment = profile_hmm.viterbi(parameters, query, rng, POS, end_POS, differentiate_match_state);
+				sam_alignment = hmmalign<T>::viterbi(parameters, query, rng, POS, end_POS, differentiate_match_state);
 
 #ifndef NDEBUG
 				{
@@ -1025,7 +1042,7 @@ void alignment_impl(
 					&& (exhaustive == false))
 				{
 					// window size probably too small, perform sacrificial full-length alignment
-					sam_alignment = profile_hmm.viterbi(parameters, query, rng, 0, parameters.m_L, differentiate_match_state);
+					sam_alignment = hmmalign<T>::viterbi(parameters, query, rng, 0, parameters.m_L, differentiate_match_state);
 #ifndef NDEBUG
 					{
 						++alignment_stats.num_sacrificial_alignments;
@@ -1078,6 +1095,7 @@ void alignment_impl(
 
 template <typename T>
 void single_end_aligner<T>::perform_alignment(
+	const std::string& reference_genome_name,
 	const clip_mode clip,
 	const uint64_t seed,
 	const bool exhaustive,
@@ -1085,6 +1103,10 @@ void single_end_aligner<T>::perform_alignment(
 	const bool differentiate_match_state) noexcept
 {
 	std::cout << ++m_phase << ") Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping)\n";
+	if (m_parameters.m_reference_genome_name.empty())
+	{
+		m_parameters.m_reference_genome_name = reference_genome_name;
+	}
 	if (seed)
 	{
 		std::cout << "   Using provided seed " << seed << " for deterministic alignment\n";
@@ -1117,7 +1139,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 	const bool differentiate_match_state) noexcept
 {
 	std::cout << "   Aligning reads from " << m_read_file_name << " (" << m_reads.size() << ")" << std::flush;
-	alignment_impl(m_reads, m_parameters, m_profile_hmm, clip, seed, exhaustive, verbose, differentiate_match_state);
+	alignment_impl(m_reads, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
 	std::cout << '\n';
 }
 
@@ -1132,7 +1154,7 @@ void paired_end_aligner<T>::perform_alignment_impl(
 	single_end_aligner<T>::perform_alignment_impl(clip, seed, exhaustive, verbose, differentiate_match_state);
 
 	std::cout << "   Aligning reads from " << m_read_file_name2 << " (" << m_reads2.size() << ")" << std::flush;
-	alignment_impl(m_reads2, m_parameters, m_profile_hmm, clip, seed, exhaustive, verbose, differentiate_match_state);
+	alignment_impl(m_reads2, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
 	std::cout << '\n';
 }
 
@@ -1146,18 +1168,26 @@ void single_end_aligner<T>::write_alignment_to_file(
 	write_alignment_to_file_impl(output_file_name, rejects_file_name);
 	std::cout << '\n';
 
-	if (m_parameters.m_reference_genome_name == "CONSENSUS")
+	if (serialize)
 	{
 		// provided an MSA
 		std::cout << "   Writing new reference sequences\n";
 
 		std::ofstream output;
 		output.open("ref_majority.fasta");
-		output << ">CONSENSUS" << '\n' << m_parameters.m_majority_ref << '\n';
+		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_majority_ref << '\n';
 		output.close();
 
 		output.open("ref_ambig.fasta");
-		output << ">CONSENSUS" << '\n' << m_parameters.m_ambig_ref << '\n';
+		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_ambig_ref << '\n';
+		output.close();
+
+		std::string output_hmm_filename = m_parameters.m_reference_genome_name;
+		boost::algorithm::to_lower(output_hmm_filename);
+		output_hmm_filename.append(".hmm");
+
+		output.open(output_hmm_filename);
+		m_parameters.save_to_file(output);
 		output.close();
 	}
 }

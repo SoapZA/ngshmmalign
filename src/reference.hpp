@@ -190,7 +190,7 @@ struct reference_genome
 	std::vector<dna_array<bool, 5>> m_table_of_included_bases;
 
 	/* name of reference genome */
-	std::string m_reference_genome_name = "CONSENSUS";
+	std::string m_reference_genome_name;
 
 	/* majority reference sequence */
 	std::string m_majority_ref;
@@ -207,10 +207,17 @@ struct reference_genome
 	reference_genome(const reference_genome<V>& v);
 
 	// Setter
+	struct msa_input
+	{
+	};
+	struct serialized_input
+	{
+	};
+
 	void set_parameters(
-		const std::vector<dna_array<double, 5>>& allel_freq_,
-		const std::vector<double>& vec_M_to_D_p_,
-		const std::vector<double>& vec_D_to_D_p_,
+		std::vector<dna_array<double, 5>>&& allel_freq_,
+		std::vector<double>&& vec_M_to_D_p_,
+		std::vector<double>&& vec_D_to_D_p_,
 		const background_rates& error_rates,
 		bool ambig_bases_unequal_weight);
 
@@ -218,7 +225,15 @@ struct reference_genome
 		const std::string& input_msa,
 		const background_rates& error_rates,
 		uint32_t read_lengths,
-		bool ambig_bases_unequal_weight);
+		bool ambig_bases_unequal_weight,
+		msa_input);
+
+	void set_parameters(
+		const std::string& input_hmm_archive,
+		const background_rates& error_rates,
+		uint32_t read_lengths,
+		bool ambig_bases_unequal_weight,
+		serialized_input);
 
 	void set_parameters(
 		const std::vector<reference_haplotype>& refs,
@@ -226,6 +241,8 @@ struct reference_genome
 		bool ambig_bases_unequal_weight);
 
 	bool display_parameters(std::ostream& output, bool fail_on_non_summation = true) const;
+
+	void save_to_file(std::ostream& ofs);
 
 	// kmer-based lookup
 	void create_index(uint16_t desired_kmer_length = 20);
@@ -240,6 +257,17 @@ struct reference_genome
 	index_stat find_pos(const boost::string_ref& query) const;
 
 private:
+	void init_parameters(
+		const background_rates& error_rates,
+		bool ambig_bases_unequal_weight);
+
+	void load_from_file(std::istream& ifs);
+
+	// parameters from which HMM is built
+	std::vector<dna_array<double, 5>> m_allel_freq;
+	std::vector<double> m_vec_M_to_D_p;
+	std::vector<double> m_vec_D_to_D_p;
+
 	uint16_t m_kmer_length;
 	using hash_map_type = boost::unordered_map<std::string, std::vector<uint32_t>, boost_string_ref_hash, boost_string_ref_equal_to>;
 	hash_map_type m_kmer_index;

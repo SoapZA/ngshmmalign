@@ -143,9 +143,21 @@ reference_genome<T>::reference_genome(const reference_genome<V>& v)
 // Setter
 template <typename T>
 void reference_genome<T>::set_parameters(
-	const std::vector<dna_array<double, 5>>& allel_freq_,
-	const std::vector<double>& vec_M_to_D_p_,
-	const std::vector<double>& vec_D_to_D_p_,
+	std::vector<dna_array<double, 5>>&& allel_freq_,
+	std::vector<double>&& vec_M_to_D_p_,
+	std::vector<double>&& vec_D_to_D_p_,
+	const background_rates& error_rates,
+	bool ambig_bases_unequal_weight)
+{
+	m_allel_freq = std::move(allel_freq_);
+	m_vec_M_to_D_p = std::move(vec_M_to_D_p_);
+	m_vec_D_to_D_p = std::move(vec_D_to_D_p_);
+
+	init_parameters(error_rates, ambig_bases_unequal_weight);
+}
+
+template <typename T>
+void reference_genome<T>::init_parameters(
 	const background_rates& error_rates,
 	const bool ambig_bases_unequal_weight)
 {
@@ -153,7 +165,7 @@ void reference_genome<T>::set_parameters(
 	(const double&) = type_caster<double, T>;
 
 	/* length of HMM */
-	m_L = allel_freq_.size();
+	m_L = m_allel_freq.size();
 
 	/* clip transition probabilities */
 	// left-clip
@@ -170,14 +182,14 @@ void reference_genome<T>::set_parameters(
 	m_into_end.from_last_match = cast(1.0 - error_rates.right_clip_open);
 
 	/* HMM transition probabilities */
-	if (vec_M_to_D_p_.size() != m_L - 1)
+	if (m_vec_M_to_D_p.size() != m_L - 1)
 	{
-		std::cerr << "vec_M_to_D_p_ (L = " << vec_M_to_D_p_.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
+		std::cerr << "m_vec_M_to_D_p (L = " << m_vec_M_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
 		std::terminate();
 	}
-	if (vec_D_to_D_p_.size() != m_L - 1)
+	if (m_vec_D_to_D_p.size() != m_L - 1)
 	{
-		std::cerr << "vec_D_to_D_p_ (L = " << vec_D_to_D_p_.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
+		std::cerr << "m_vec_D_to_D_p (L = " << m_vec_D_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
 		std::terminate();
 	}
 
@@ -208,7 +220,7 @@ void reference_genome<T>::set_parameters(
 	////////////////////////
 	// Position 1 in pHMM //
 	////////////////////////
-	double cur_M_to_D = (vec_M_to_D_p_[0] ? vec_M_to_D_p_[0] : error_rates.gap_open);
+	double cur_M_to_D = (m_vec_M_to_D_p[0] ? m_vec_M_to_D_p[0] : error_rates.gap_open);
 	double sum = error_rates.insert_open + cur_M_to_D + error_rates.right_clip_open + error_rates.end_prob;
 	double M_to_M = 1.0 - sum;
 	assert(M_to_M > 0);
@@ -237,10 +249,10 @@ void reference_genome<T>::set_parameters(
 	double cur_D_to_D;
 	for (typename std::vector<trans_matrix<double>>::size_type i = 2; i < m_L - 1; ++i)
 	{
-		cur_M_to_D = (vec_M_to_D_p_[i - 1] ? vec_M_to_D_p_[i - 1] : error_rates.gap_open);
+		cur_M_to_D = (m_vec_M_to_D_p[i - 1] ? m_vec_M_to_D_p[i - 1] : error_rates.gap_open);
 
 		// -> D transitions
-		cur_D_to_D = (vec_D_to_D_p_[i - 1] ? vec_D_to_D_p_[i - 1] : error_rates.gap_extend);
+		cur_D_to_D = (m_vec_D_to_D_p[i - 1] ? m_vec_D_to_D_p[i - 1] : error_rates.gap_extend);
 		cur_D_to_D -= (cur_D_to_D == 1 ? error_rates.gap_open : 0);
 
 		float_trans_matrix[i].into_deletion = {
@@ -340,25 +352,25 @@ void reference_genome<T>::set_parameters(
 			temp = 0;
 			for (char k : { 'A', 'C', 'G', 'T' })
 			{
-				temp += allel_freq_[i][k] * (j == k ? 1 - error_rates.error_rate : error_rates.error_rate / 3);
+				temp += m_allel_freq[i][k] * (j == k ? 1 - error_rates.error_rate : error_rates.error_rate / 3);
 			}
-			m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (allel_freq_[i][j] ? 1.0 : temp))));
-			m_table_of_included_bases[i][j] = (allel_freq_[i][j] > error_rates.low_frequency_cutoff);
+			m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (m_allel_freq[i][j] ? 1.0 : temp))));
+			m_table_of_included_bases[i][j] = (m_allel_freq[i][j] > error_rates.low_frequency_cutoff);
 
 			// find the majority base
-			if (allel_freq_[i][j] >= max_freq)
+			if (m_allel_freq[i][j] >= max_freq)
 			{
-				if (allel_freq_[i][j] > max_freq)
+				if (m_allel_freq[i][j] > max_freq)
 				{
 					majority_bases.clear();
-					max_freq = allel_freq_[i][j];
+					max_freq = m_allel_freq[i][j];
 				}
 
 				majority_bases.push_back(j);
 			}
 
 			// find ambiguous base
-			if (allel_freq_[i][j] > error_rates.low_frequency_cutoff)
+			if (m_allel_freq[i][j] > error_rates.low_frequency_cutoff)
 			{
 				ambig_bases.push_back(j);
 			}
@@ -382,10 +394,26 @@ void reference_genome<T>::set_parameters(
 	const std::string& input_msa,
 	const background_rates& error_rates,
 	const uint32_t read_lengths,
-	const bool ambig_bases_unequal_weight)
+	const bool ambig_bases_unequal_weight,
+	msa_input)
 {
 	read_length_profile = read_lengths;
 	set_parameters(fasta_read<reference_haplotype>(input_msa), error_rates, ambig_bases_unequal_weight);
+}
+
+template <typename T>
+void reference_genome<T>::set_parameters(
+	const std::string& input_hmm_archive,
+	const background_rates& error_rates,
+	const uint32_t read_lengths,
+	const bool ambig_bases_unequal_weight,
+	serialized_input)
+{
+	read_length_profile = read_lengths;
+	std::ifstream ifs(input_hmm_archive);
+	load_from_file(ifs);
+
+	init_parameters(error_rates, ambig_bases_unequal_weight);
 }
 
 template <typename T>
@@ -531,7 +559,88 @@ void reference_genome<T>::set_parameters(
 	debug_output.close();
 #endif
 
-	set_parameters(E_p, M_D_p, D_D_p, error_rates, ambig_bases_unequal_weight);
+	set_parameters(std::move(E_p), std::move(M_D_p), std::move(D_D_p), error_rates, ambig_bases_unequal_weight);
+}
+
+template <typename T>
+void reference_genome<T>::load_from_file(std::istream& ifs)
+{
+	constexpr auto max_seek = std::numeric_limits<std::streamsize>::max();
+
+	// load length
+	ifs.ignore(max_seek, ' ');
+	decltype(m_L) L;
+	ifs >> L;
+	ifs.ignore(max_seek, '\n');
+
+	// ignore "Emission Table" line
+	ifs.ignore(max_seek, '\n');
+
+	// ignore "A C G T N" line
+	ifs.ignore(max_seek, '\n');
+
+	m_allel_freq.resize(L);
+	for (std::size_t i = 0; i < L; ++i)
+	{
+		ifs >> m_allel_freq[i];
+	}
+	ifs.ignore(max_seek, '\n');
+
+	// ignore separating line "M -> D Table"
+	ifs.ignore(max_seek, '\n');
+	m_vec_M_to_D_p.resize(L - 1);
+	for (std::size_t i = 0; i < L - 1; ++i)
+	{
+		ifs >> m_vec_M_to_D_p[i];
+	}
+	ifs.ignore(max_seek, '\n');
+
+	// ignore separating line "D -> D Table"
+	ifs.ignore(max_seek, '\n');
+	m_vec_D_to_D_p.resize(L - 1);
+	for (std::size_t i = 0; i < L - 1; ++i)
+	{
+		ifs >> m_vec_D_to_D_p[i];
+	}
+
+	// perform final sanity check on stream
+	if (ifs.fail() == true)
+	{
+		std::cerr << "\tERROR during reading of parameters, aborting\n";
+		exit(EXIT_FAILURE);
+	}
+}
+
+template <typename T>
+void reference_genome<T>::save_to_file(std::ostream& ofs)
+{
+	ofs << std::fixed << std::setprecision(5);
+	ofs << "L: " << m_allel_freq.size() << '\n';
+	ofs << "Emission Table:\n";
+	ofs
+		<< std::left << std::setw(5 + 3) << 'A'
+		<< std::left << std::setw(5 + 3) << 'C'
+		<< std::left << std::setw(5 + 3) << 'G'
+		<< std::left << std::setw(5 + 3) << 'T'
+		<< std::left << std::setw(5 + 3) << 'N'
+		<< '\n';
+
+	for (const auto& i : m_allel_freq)
+	{
+		ofs << i << '\n';
+	}
+
+	ofs << "M -> D Table\n";
+	for (const auto& i : m_vec_M_to_D_p)
+	{
+		ofs << i << '\n';
+	}
+
+	ofs << "D -> D Table\n";
+	for (const auto& i : m_vec_D_to_D_p)
+	{
+		ofs << i << '\n';
+	}
 }
 
 // Misc

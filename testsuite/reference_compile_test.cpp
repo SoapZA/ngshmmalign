@@ -55,9 +55,9 @@ int main()
 
 	reference_genome<fp_type> fp_pp;
 	fp_pp.set_parameters(
-		E_p,
-		M_D_p,
-		D_D_p,
+		decltype(E_p)(E_p),
+		decltype(M_D_p)(M_D_p),
+		decltype(D_D_p)(D_D_p),
 		background_rates{
 			min_allele_freq,
 			substitution_rate,
@@ -75,9 +75,9 @@ int main()
 
 	reference_genome<int32_t> int_pp;
 	int_pp.set_parameters(
-		E_p,
-		M_D_p,
-		D_D_p,
+		decltype(E_p)(E_p),
+		decltype(M_D_p)(M_D_p),
+		decltype(D_D_p)(D_D_p),
 		background_rates{
 			min_allele_freq,
 			substitution_rate,

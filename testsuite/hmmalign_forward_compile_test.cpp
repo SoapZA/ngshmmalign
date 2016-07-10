@@ -41,9 +41,9 @@ int main()
 
 	reference_genome<double> parameters;
 	parameters.set_parameters(
-		E_p,
-		M_D_p,
-		D_D_p,
+		decltype(E_p)(E_p),
+		decltype(M_D_p)(M_D_p),
+		decltype(D_D_p)(D_D_p),
 		background_rates{
 			substitution_rate,
 			gap_open,

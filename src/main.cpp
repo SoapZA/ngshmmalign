@@ -48,6 +48,7 @@ int main(int argc, const char* argv[])
 	std::string profile_filename;
 	std::string output_filename;
 	std::string rejects_filename;
+	std::string reference_genome_name;
 
 	background_rates params;
 
@@ -72,6 +73,7 @@ int main(int argc, const char* argv[])
 		(",l", "Do not clean up MAFFT temporary MSA files")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
+		(",N", boost::program_options::value<decltype(reference_genome_name)>(&reference_genome_name)->default_value("CONSENSUS"), "Name of consensus reference contig that will be created")
 		(",U", "Loci with ambiguous bases get their emission probabilities according to their allele frequencies. In practice this is undesirable, as it leads to systematic accumulation of gaps in homopolymeric regions with SNVs")
 		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(42), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
 		("hard", "Hard-clip reads. Clipped bases will NOT be in the sequence in the alignment")
@@ -247,7 +249,7 @@ int main(int argc, const char* argv[])
 	}
 
 	/* 5) perform alignment */
-	ngs_aligner->perform_alignment(read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
+	ngs_aligner->perform_alignment(reference_genome_name, read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
 
 	/* 6) write alignment to output */
 	ngs_aligner->write_alignment_to_file(output_filename, rejects_filename);

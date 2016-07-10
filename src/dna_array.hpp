@@ -83,17 +83,38 @@ public:
 	inline const_reference operator[](char) const noexcept;
 	inline reference operator[](char) noexcept;
 
-	// output
-	friend std::ostream& operator<<(std::ostream& output, const dna_array& dna_array_) noexcept
+	void pretty_print(std::ostream& output) const
 	{
 		constexpr int col_width = 15;
 
-		return output
-			<< std::left << std::setw(3) << "A:" << std::left << std::setw(col_width + 1) << dna_array_['A']
-			<< std::left << std::setw(3) << "C:" << std::left << std::setw(col_width + 1) << dna_array_['C']
-			<< std::left << std::setw(3) << "G:" << std::left << std::setw(col_width + 1) << dna_array_['G']
-			<< std::left << std::setw(3) << "T:" << std::left << std::setw(col_width + 1) << dna_array_['T']
-			<< std::left << std::setw(3) << "N:" << std::left << std::setw(col_width + 1) << dna_array_['N'];
+		output
+			<< std::left << std::setw(3) << "A:" << std::left << std::setw(col_width + 1) << (*this)['A']
+			<< std::left << std::setw(3) << "C:" << std::left << std::setw(col_width + 1) << (*this)['C']
+			<< std::left << std::setw(3) << "G:" << std::left << std::setw(col_width + 1) << (*this)['G']
+			<< std::left << std::setw(3) << "T:" << std::left << std::setw(col_width + 1) << (*this)['T']
+			<< std::left << std::setw(3) << "N:" << std::left << std::setw(col_width + 1) << (*this)['N'];
+	}
+
+	// output
+	friend std::ostream& operator<<(std::ostream& output, const dna_array& dna_array_) noexcept
+	{
+		output << dna_array_[static_cast<size_type>(0)];
+		for (size_type i = 1; i < N; ++i)
+		{
+			output << ' ' << dna_array_[static_cast<size_type>(i)];
+		}
+		return output;
+	}
+
+	// input
+	friend std::istream& operator>>(std::istream& input, dna_array& dna_array_) noexcept
+	{
+		input >> dna_array_[static_cast<size_type>(0)];
+		for (size_type i = 1; i < N; ++i)
+		{
+			input >> dna_array_[static_cast<size_type>(i)];
+		}
+		return input;
 	}
 };
 
