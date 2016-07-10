@@ -537,7 +537,6 @@ sam_entry hmmalign<T>::viterbi(
 		//
 
 		CIGAR_vec CIGAR;
-		std::ostringstream MD_tag;
 
 		int32_t POS;
 		int32_t left_clip_length = 0;
@@ -718,7 +717,7 @@ sam_entry hmmalign<T>::viterbi(
 	// calculate edit/Hamming distance
 	struct calculate_edit_distance
 	{
-		void operator()(const reference_genome<T>& parameters, const boost::string_ref& seq, alignment_record& alignment, bool rewrite_cigar) const
+		void operator()(const reference_genome<T>& parameters, const boost::string_ref& seq, alignment_record& alignment, std::ostringstream& MD_tag, bool rewrite_cigar) const
 		{
 			uint32_t pos_in_read = alignment.left_clip_length;
 			uint32_t pos_on_genome = alignment.POS;
@@ -748,7 +747,7 @@ sam_entry hmmalign<T>::viterbi(
 
 							if (cur_state == 'X')
 							{
-								alignment.MD_tag << MD_length << parameters.m_ambig_ref[i];
+								MD_tag << MD_length << parameters.m_ambig_ref[i];
 								MD_length = 0;
 							}
 							else
@@ -795,7 +794,7 @@ sam_entry hmmalign<T>::viterbi(
 							new_CIGAR_vec.push_back(op);
 						}
 
-						alignment.MD_tag << MD_length << '^' << parameters.m_ambig_ref.substr(pos_on_genome, op.second);
+						MD_tag << MD_length << '^' << parameters.m_ambig_ref.substr(pos_on_genome, op.second);
 						MD_length = 0;
 
 						alignment.edit_distance += op.second;
@@ -809,20 +808,21 @@ sam_entry hmmalign<T>::viterbi(
 				alignment.CIGAR.swap(new_CIGAR_vec);
 			}
 
-			alignment.MD_tag << MD_length;
+			MD_tag << MD_length;
 		}
 	};
 
 	// replace 'M' in CIGAR if differentiate_match_state == true
 	// Match: '=' Mismatch: 'X'
-	calculate_edit_distance()(parameters, sequence, all_optimal_alignments[rand_alignment], differentiate_match_state);
+	std::ostringstream optimal_MD_tag;
+	calculate_edit_distance()(parameters, sequence, all_optimal_alignments[rand_alignment], optimal_MD_tag, differentiate_match_state);
 
 	return {
 		parameters.m_reference_genome_name.c_str(),
 		all_optimal_alignments[rand_alignment].POS,
 		std::move(all_optimal_alignments[rand_alignment].CIGAR),
 		all_optimal_alignments[rand_alignment].edit_distance,
-		all_optimal_alignments[rand_alignment].MD_tag.str(),
+		optimal_MD_tag.str(),
 		end.score,
 		static_cast<int32_t>(sequence.length()) - all_optimal_alignments[rand_alignment].left_clip_length - all_optimal_alignments[rand_alignment].right_clip_length,
 		all_optimal_alignments[rand_alignment].segment_length,
