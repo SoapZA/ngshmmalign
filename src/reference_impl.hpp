@@ -422,17 +422,17 @@ void reference_genome<T>::set_parameters(
 	const background_rates& error_rates,
 	const bool ambig_bases_unequal_weight)
 {
-	std::size_t L = refs[0].sequence.length();
-	const std::vector<reference_haplotype>::size_type num_haps = refs.size();
+	const int32_t L = refs[0].sequence.length();
+	const int32_t num_haps = refs.size();
 
 	std::vector<dna_array<double, 5>> E_p(L, { 0.0, 0.0, 0.0, 0.0, 0.0 });
 	std::vector<double> M_D_p(L - 1, 0);
 	std::vector<double> D_D_p(L - 1, 0);
 
 	// 1.) check that all haplotypes have the same length
-	for (std::vector<reference_haplotype>::size_type i = 1; i < num_haps; ++i)
+	for (int32_t i = 1; i < num_haps; ++i)
 	{
-		if (refs[i].sequence.length() != L)
+		if (L != static_cast<int32_t>(refs[i].sequence.length()))
 		{
 			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' does not have length L = " << L << "! Aborting.\n";
 			exit(EXIT_FAILURE);
@@ -447,9 +447,9 @@ void reference_genome<T>::set_parameters(
 
 	// 2.) check that all haplotypes have proper DNA letters
 	char cur_base;
-	for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
+	for (int32_t i = 0; i < num_haps; ++i)
 	{
-		for (std::string::size_type j = 0; j < L; ++j)
+		for (int32_t j = 0; j < L; ++j)
 		{
 			cur_base = refs[i].sequence[j];
 			if ((wobble_to_ambig_bases.find(cur_base) == wobble_to_ambig_bases.end()) && (cur_base != '-'))
@@ -466,7 +466,7 @@ void reference_genome<T>::set_parameters(
 	double DD, sumD;
 	bool onlyGap;
 
-	for (std::string::size_type j = 0; j < L; ++j)
+	for (int32_t j = 0; j < L; ++j)
 	{
 		sum = 0;
 
@@ -478,7 +478,7 @@ void reference_genome<T>::set_parameters(
 		onlyGap = true;
 
 		// first loop
-		for (std::vector<reference_haplotype>::size_type i = 0; i < num_haps; ++i)
+		for (int32_t i = 0; i < num_haps; ++i)
 		{
 			if ((refs[i].start <= j) && (j < refs[i].end))
 			{

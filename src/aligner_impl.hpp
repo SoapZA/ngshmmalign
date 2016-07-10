@@ -711,7 +711,8 @@ struct partioned_genome
 				}
 			};
 
-			for (int32_t j = 0; j < valid_loci.size() - 1; ++j)
+			const int32_t num_valid_loci = valid_loci.size() - 1;
+			for (int32_t j = 0; j < num_valid_loci; ++j)
 			{
 				const int32_t left_locus = valid_loci[j];
 				const int32_t right_locus = valid_loci[j + 1];

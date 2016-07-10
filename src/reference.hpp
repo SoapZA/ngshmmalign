@@ -99,8 +99,8 @@ struct reference_haplotype
 
 	// we use half-open intervals
 	// i.e., for the enclosed-interval [start, end)
-	std::string::size_type start;
-	std::string::size_type end;
+	int32_t start;
+	int32_t end;
 	double count;
 
 	reference_haplotype(const std::string& id, std::string&& seq) noexcept;
