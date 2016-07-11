@@ -477,6 +477,7 @@ struct partioned_genome
 		//uint64_t num_unique_assignments = 0;
 		//uint64_t num_multiple_assignments = 0;
 		//uint64_t num_no_assignments = 0;
+		const int32_t max_index = m_regions.size() - 1;
 
 		for (const auto& read : reads)
 		{
@@ -484,7 +485,7 @@ struct partioned_genome
 			const auto end = read.m_sam_record.POS + read.m_sam_record.m_segment_length + read.m_sam_record.m_right_clip_length;
 
 			std::vector<int32_t> candidate_regions;
-			for (int32_t i = start / m_offset; i >= 0; --i)
+			for (int32_t i = std::min<int32_t>(start / m_offset, max_index); i >= 0; --i)
 			{
 				if ((m_regions.at(i).m_start <= start) && (end <= m_regions.at(i).m_end))
 				{
