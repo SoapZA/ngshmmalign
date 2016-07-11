@@ -229,6 +229,8 @@ int main(int argc, const char* argv[])
 		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!\n";
 		exit(EXIT_FAILURE);
 	}
+	boost::filesystem::path data_root_full_path(output_filename);
+	const std::string data_root((data_root_full_path.has_parent_path() ? data_root_full_path.parent_path().string() : std::string(".")) + "/");
 
 	/* 0.2) create HMM aligner object */
 	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(input_files, min_mapped_length, argc, argv, write_unpaired);
@@ -245,14 +247,14 @@ int main(int argc, const char* argv[])
 	/* 4) perform parameter estimation */
 	if (perform_hmm_learning)
 	{
-		ngs_aligner->estimate_parameters(mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight);
+		ngs_aligner->estimate_parameters(data_root, mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight);
 	}
 
 	/* 5) perform alignment */
 	ngs_aligner->perform_alignment(reference_genome_name, read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
 
 	/* 6) write alignment to output */
-	ngs_aligner->write_alignment_to_file(output_filename, rejects_filename);
+	ngs_aligner->write_alignment_to_file(data_root, output_filename, rejects_filename);
 
 	return EXIT_SUCCESS;
 }

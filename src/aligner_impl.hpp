@@ -762,6 +762,7 @@ struct partioned_genome
 
 template <typename T>
 void single_end_aligner<T>::estimate_parameters(
+	const std::string& data_root,
 	const std::string& mafft,
 	const background_rates& error_rates,
 	const uint64_t seed,
@@ -769,13 +770,21 @@ void single_end_aligner<T>::estimate_parameters(
 	const bool keep_mafft_files,
 	const bool ambig_bases_unequal_weight) noexcept
 {
+	// 0. create random TMP directory name in order to avoid clashes
+	std::default_random_engine rng(seed);
+	std::random_device rd;
+	std::ostringstream tmp_root_constr;
+	tmp_root_constr
+		<< data_root
+		<< "TMP_"
+		<< (seed ? std::uniform_int_distribution<uint16_t>()(rng) : std::uniform_int_distribution<uint16_t>()(rd));
+	const std::string tmpdir_root(tmp_root_constr.str());
+
 	// 1. perform rough alignment first
 	std::cout << ++m_phase << ") Performing first rough alignment\n";
 	perform_alignment_impl(clip_mode::soft, seed, false, verbose, false);
 
 	// 2. chop up genome and extract reads
-	std::default_random_engine rng(seed);
-	constexpr const char* tmpdir_root = "./TMP";
 	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
 	estimate_parameters_impl(separated_reads, rng);
 
@@ -1162,11 +1171,12 @@ void paired_end_aligner<T>::perform_alignment_impl(
 // 7. write alignment to output
 template <typename T>
 void single_end_aligner<T>::write_alignment_to_file(
+	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
 	std::cout << ++m_phase << ") Writing ";
-	write_alignment_to_file_impl(output_file_name, rejects_file_name);
+	write_alignment_to_file_impl(data_root, output_file_name, rejects_file_name);
 	std::cout << '\n';
 
 	if (serialize)
@@ -1175,11 +1185,11 @@ void single_end_aligner<T>::write_alignment_to_file(
 		std::cout << "   Writing new reference sequences\n";
 
 		std::ofstream output;
-		output.open("ref_majority.fasta");
+		output.open(data_root + "ref_majority.fasta");
 		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_majority_ref << '\n';
 		output.close();
 
-		output.open("ref_ambig.fasta");
+		output.open(data_root + "ref_ambig.fasta");
 		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_ambig_ref << '\n';
 		output.close();
 
@@ -1187,7 +1197,7 @@ void single_end_aligner<T>::write_alignment_to_file(
 		boost::algorithm::to_lower(output_hmm_filename);
 		output_hmm_filename.append(".hmm");
 
-		output.open(output_hmm_filename);
+		output.open(data_root + output_hmm_filename);
 		m_parameters.save_to_file(output);
 		output.close();
 	}
@@ -1214,6 +1224,7 @@ void write_header(
 
 template <typename T>
 void single_end_aligner<T>::write_alignment_to_file_impl(
+	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
@@ -1221,8 +1232,8 @@ void single_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t proper_reads = 0;
 	std::size_t too_short_reads = 0;
 
-	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(rejects_file_name);
+	std::ofstream output_file(data_root + output_file_name);
+	std::ofstream rejects_file(data_root + rejects_file_name);
 
 	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
 	if (output_file_name != rejects_file_name)
@@ -1243,6 +1254,7 @@ void single_end_aligner<T>::write_alignment_to_file_impl(
 
 template <typename T>
 void paired_end_aligner<T>::write_alignment_to_file_impl(
+	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
@@ -1341,8 +1353,8 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t num_for_rev = 0;
 	std::size_t num_rev_rev = 0;
 
-	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(rejects_file_name);
+	std::ofstream output_file(data_root + output_file_name);
+	std::ofstream rejects_file(data_root + rejects_file_name);
 	std::ofstream& unpaired_file = (m_write_unpaired ? output_file : rejects_file);
 
 	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);

@@ -116,13 +116,13 @@ public:
 	void sort_reads() noexcept;
 
 	// 5. perform parameter estimation
-	void estimate_parameters(const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight) noexcept;
+	void estimate_parameters(const std::string& data_root, const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight) noexcept;
 
 	// 6. perform alignment
 	void perform_alignment(const std::string& reference_genome_name, clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
 	// 7. write alignment to output
-	void write_alignment_to_file(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
+	void write_alignment_to_file(const std::string& data_root, const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
 
 	// 8. dtor
 	virtual ~single_end_aligner() = default;
@@ -145,7 +145,7 @@ protected:
 	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept;
 
 	// 7. write alignment to output
-	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
+	virtual void write_alignment_to_file_impl(const std::string& data_root, const std::string& output_file_name, const std::string& rejects_file_name) noexcept;
 
 	// command line parameters
 	int m_argc;
@@ -191,7 +191,7 @@ private:
 	virtual void perform_alignment_impl(clip_mode clip, uint64_t seed, bool exhaustive, bool verbose, bool differentiate_match_state) noexcept override;
 
 	// 7. write alignment to output
-	virtual void write_alignment_to_file_impl(const std::string& output_file_name, const std::string& rejects_file_name) noexcept override;
+	virtual void write_alignment_to_file_impl(const std::string& data_root, const std::string& output_file_name, const std::string& rejects_file_name) noexcept override;
 
 public:
 	// 8. dtor
