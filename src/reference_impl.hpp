@@ -328,6 +328,51 @@ void reference_genome<T>::init_parameters(
 	m_uniform_base_e['A'] = static_cast<T>(log_base(0.25));
 	m_uniform_base_e['N'] = static_cast<T>(log_base(1.0));
 
+	// determine majority and ambiguous reference sequence
+	auto find_majority_and_ambiguous_base = [](dna_array<double, 5>& allel_freq, const double min_freq, std::default_random_engine& rng) -> std::pair<char, char>
+	{
+		// 1. determine coverage
+		const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
+
+		// 2. determine majority + ambiguous bases, normalize frequency components
+		std::string majority_bases, ambig_bases;
+		double max_freq = -1;
+		for (char j : { 'A', 'C', 'G', 'T' })
+		{
+			// majority base
+			if (allel_freq[j] >= max_freq)
+			{
+				if (allel_freq[j] > max_freq)
+				{
+					majority_bases.clear();
+					max_freq = allel_freq[j];
+				}
+
+				majority_bases.push_back(j);
+			}
+
+			// ambiguous bases
+			if (allel_freq[j] > min_freq)
+			{
+				ambig_bases.push_back(j);
+			}
+
+			allel_freq[j] /= coverage;
+		}
+
+		const char maj_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
+		if (coverage > std::ceil(1.0 / min_freq))
+		{
+			// high coverage, can use ambiguous base
+			return std::pair<char, char>(maj_base, ambig_to_wobble_base.find(ambig_bases)->second);
+		}
+		else
+		{
+			// low coverage, use majority base instead
+			return std::pair<char, char>(maj_base, maj_base);
+		}
+	};
+
 	// set position-specific emission matrix
 	m_E.resize(m_L);
 	m_table_of_included_bases.resize(m_L);
@@ -336,17 +381,17 @@ void reference_genome<T>::init_parameters(
 	m_majority_ref.clear();
 	m_ambig_ref.clear();
 
-	std::string majority_bases, ambig_bases;
 	std::default_random_engine rng;
-	double max_freq, temp;
-	char majority_base;
+	double temp;
 
 	for (typename std::vector<dna_array<double, 5>>::size_type i = 0; i < m_L; ++i)
 	{
-		majority_bases.clear();
-		ambig_bases.clear();
-		max_freq = -1;
+		// 1. determine majority, ambiguous bases and normalize
+		std::pair<char, char> maj_ambig_base = find_majority_and_ambiguous_base(m_allel_freq[i], error_rates.low_frequency_cutoff, rng);
+		m_majority_ref.push_back(maj_ambig_base.first);
+		m_ambig_ref.push_back(maj_ambig_base.second);
 
+		// 2. calculate emission probabilities
 		for (char j : { 'A', 'C', 'G', 'T' })
 		{
 			temp = 0;
@@ -356,33 +401,10 @@ void reference_genome<T>::init_parameters(
 			}
 			m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (m_allel_freq[i][j] ? 1.0 : temp))));
 			m_table_of_included_bases[i][j] = (m_allel_freq[i][j] > error_rates.low_frequency_cutoff);
-
-			// find the majority base
-			if (m_allel_freq[i][j] >= max_freq)
-			{
-				if (m_allel_freq[i][j] > max_freq)
-				{
-					majority_bases.clear();
-					max_freq = m_allel_freq[i][j];
-				}
-
-				majority_bases.push_back(j);
-			}
-
-			// find ambiguous base
-			if (m_allel_freq[i][j] > error_rates.low_frequency_cutoff)
-			{
-				ambig_bases.push_back(j);
-			}
 		}
 
 		m_E[i]['N'] = static_cast<T>(log_base(1.0));
 		m_table_of_included_bases[i]['N'] = true;
-
-		majority_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
-
-		m_majority_ref.push_back(majority_base);
-		m_ambig_ref.push_back(ambig_to_wobble_base.find(ambig_bases)->second);
 	}
 
 	std::cout << '\t' << "Size of genome:          " << m_L << " nt\n\n";

@@ -651,7 +651,15 @@ struct partioned_genome
 				}
 			}
 
-			// 2. find start of region with respect to reference
+			// 2. determine whether a locus is of high coverage
+			std::vector<uint8_t> is_locus_cov_high;
+			is_locus_cov_high.reserve(total_length_of_MSA);
+			for (int32_t j = 0; j < total_length_of_MSA; ++j)
+			{
+				is_locus_cov_high.push_back((static_cast<double>(nongap_coverage[j]) / coverage[j]) > 0.5);
+			}
+
+			// 3. find start of region with respect to reference
 			// The offsets form a CLOSED interval, which is unlike
 			// what ngshmmalign usually uses, namely half-open intervals
 			int32_t ref_start = 0;
@@ -665,6 +673,13 @@ struct partioned_genome
 					++ref_start;
 				}
 				--ref_start;
+
+				// start index has to be on a valid (high coverage locus)
+				// otherwise, bases might become lost
+				while (is_locus_cov_high[ref_start] == false)
+				{
+					++ref_start;
+				}
 			}
 
 			int32_t ref_end = total_length_of_MSA - 1;
@@ -678,37 +693,43 @@ struct partioned_genome
 					--ref_end;
 				}
 				++ref_end;
+
+				// end index has to be on a valid (high coverage locus)
+				// otherwise, bases might become lost
+				while (is_locus_cov_high[ref_end] == false)
+				{
+					++ref_end;
+				}
 			}
 
-			// 3. find all valid loci in the MSA region
+			// 4. find all valid loci in the MSA region
 			// TODO: add more adaptive and intelligent
 			// homopolymer detector
 			std::vector<int32_t> valid_loci;
 			valid_loci.reserve(ref_end - ref_start + 1);
 			for (int32_t j = ref_start; j <= ref_end; ++j)
 			{
-				if ((static_cast<double>(nongap_coverage[j]) / coverage[j]) > min_base_cov)
+				// a general problem of our estimation scheme is that is rather sensitive
+				// to artefacts in low coverage regimes. In order to decide whether
+				// a locus in the alignment is 'valid', we therefore require at least
+				// 3 reads supporting the locus AND a minimum fraction of 'min_base_cov',
+				// and if we have less than 3 reads, all of them must support the position.
+				if ((static_cast<double>(nongap_coverage[j]) / coverage[j]) >= std::min<double>(std::max<double>(2.5 / coverage[j], min_base_cov), 1.0))
 				{
 					valid_loci.push_back(j);
 				}
 			}
 
-			// 4. determine parameters
-			auto renormalize_dist = [min_base_cutoff](dna_array<double, 5>& allel_freq) -> void
+			// 5. determine parameters
+			auto remove_low_frequency_bases = [min_base_cutoff](dna_array<double, 5>& allel_freq) -> void
 			{
-				const double first_sum = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
+				const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
 				for (char k : { 'A', 'C', 'G', 'T' })
 				{
-					if (allel_freq[k] / first_sum < min_base_cutoff)
+					if (allel_freq[k] / coverage < min_base_cutoff)
 					{
 						allel_freq[k] = 0;
 					}
-				}
-
-				const double second_sum = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
-				for (char k : { 'A', 'C', 'G', 'T' })
-				{
-					allel_freq[k] /= second_sum;
 				}
 			};
 
@@ -745,7 +766,7 @@ struct partioned_genome
 					num_D_D = 0;
 				}
 
-				renormalize_dist(base_dist[left_locus]);
+				remove_low_frequency_bases(base_dist[left_locus]);
 				E_p.push_back(base_dist[left_locus]);
 				M_D_p.push_back(num_M_D / num_M);
 				D_D_p.push_back(num_D_D / num_D);
@@ -753,7 +774,7 @@ struct partioned_genome
 				if ((i.m_end == m_regions.back().m_end) && (right_locus == valid_loci.back()))
 				{
 					// deal with the last global position
-					renormalize_dist(base_dist[right_locus]);
+					remove_low_frequency_bases(base_dist[right_locus]);
 					E_p.push_back(base_dist[right_locus]);
 				}
 			}
