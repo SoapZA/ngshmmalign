@@ -1233,7 +1233,7 @@ void single_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t proper_reads = 0;
 	std::size_t too_short_reads = 0;
 
-	std::ofstream output_file(data_root + output_file_name);
+	std::ofstream output_file(output_file_name);
 	std::ofstream rejects_file(data_root + rejects_file_name);
 
 	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
@@ -1354,7 +1354,7 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t num_for_rev = 0;
 	std::size_t num_rev_rev = 0;
 
-	std::ofstream output_file(data_root + output_file_name);
+	std::ofstream output_file(output_file_name);
 	std::ofstream rejects_file(data_root + rejects_file_name);
 	std::ofstream& unpaired_file = (m_write_unpaired ? output_file : rejects_file);
 
