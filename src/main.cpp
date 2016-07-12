@@ -230,7 +230,21 @@ int main(int argc, const char* argv[])
 		exit(EXIT_FAILURE);
 	}
 	boost::filesystem::path data_root_full_path(output_filename);
-	const std::string data_root((data_root_full_path.has_parent_path() ? data_root_full_path.parent_path().string() : std::string(".")) + "/");
+	std::string data_root;
+	if (data_root_full_path.has_parent_path())
+	{
+		// output_filename contains a parent_path, i.e. a/b/c/aln.sam
+		data_root = data_root_full_path.parent_path().string() + "/";
+	}
+	else
+	{
+		// output_filename contains NO parent_path, i.e. aln.sam
+		data_root = "./";
+		output_filename = data_root + output_filename;
+	}
+
+	boost::filesystem::path rejects_full_path(rejects_filename);
+	rejects_filename = (rejects_full_path.has_parent_path() ? std::string() : data_root) + rejects_filename;
 
 	/* 0.2) create HMM aligner object */
 	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(input_files, min_mapped_length, argc, argv, write_unpaired);

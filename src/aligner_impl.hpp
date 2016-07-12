@@ -1177,7 +1177,7 @@ void single_end_aligner<T>::write_alignment_to_file(
 	const std::string& rejects_file_name) noexcept
 {
 	std::cout << ++m_phase << ") Writing ";
-	write_alignment_to_file_impl(data_root, output_file_name, rejects_file_name);
+	write_alignment_to_file_impl(output_file_name, rejects_file_name);
 	std::cout << '\n';
 
 	if (serialize)
@@ -1225,7 +1225,6 @@ void write_header(
 
 template <typename T>
 void single_end_aligner<T>::write_alignment_to_file_impl(
-	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
@@ -1234,7 +1233,7 @@ void single_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t too_short_reads = 0;
 
 	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(data_root + rejects_file_name);
+	std::ofstream rejects_file(rejects_file_name);
 
 	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
 	if (output_file_name != rejects_file_name)
@@ -1255,7 +1254,6 @@ void single_end_aligner<T>::write_alignment_to_file_impl(
 
 template <typename T>
 void paired_end_aligner<T>::write_alignment_to_file_impl(
-	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
@@ -1355,7 +1353,7 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 	std::size_t num_rev_rev = 0;
 
 	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(data_root + rejects_file_name);
+	std::ofstream rejects_file(rejects_file_name);
 	std::ofstream& unpaired_file = (m_write_unpaired ? output_file : rejects_file);
 
 	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
