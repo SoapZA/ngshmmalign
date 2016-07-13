@@ -452,6 +452,8 @@ struct partioned_genome
 	const int32_t m_offset;
 	const int32_t m_num_bins;
 
+	const int32_t m_min_mapped_length;
+
 	partioned_genome() = delete;
 	partioned_genome(const partioned_genome&) = delete;
 	partioned_genome(partioned_genome&&) = delete;
@@ -460,7 +462,8 @@ struct partioned_genome
 
 	partioned_genome(const std::string& tmpdir, const int32_t L, const int32_t read_profile) noexcept
 		: m_offset(read_profile / 6),
-		  m_num_bins(L / m_offset)
+		  m_num_bins(L / m_offset),
+		  m_min_mapped_length(read_profile * 0.8)
 	{
 		m_regions.reserve(m_num_bins);
 		const int32_t num_digits = std::to_string(L).length();
@@ -481,6 +484,13 @@ struct partioned_genome
 
 		for (const auto& read : reads)
 		{
+			if (read.m_sam_record.m_mapped_length < m_min_mapped_length)
+			{
+				// at least 80% of the profile length needs to be in mapped
+				// bases in the read to be considered for the MSA.
+				continue;
+			}
+
 			const auto start = read.m_sam_record.POS - read.m_sam_record.m_left_clip_length;
 			const auto end = read.m_sam_record.POS + read.m_sam_record.m_segment_length + read.m_sam_record.m_right_clip_length;
 
@@ -552,7 +562,7 @@ struct partioned_genome
 			for (int32_t j = 0; j < max_num_reads; ++j)
 			{
 				output << '>' << i.m_reads[j]->m_fastq_record.m_id << '\n';
-				i.m_reads[j]->print_sequence(output, false);
+				i.m_reads[j]->print_sequence(output, true);
 				output << '\n';
 			}
 			output << ">REF\n" << reference.substr(i.m_start, i.m_end - i.m_start) << '\n';
@@ -1310,16 +1320,9 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 				{
 					if (it2->m_sam_record.POS == it1->m_sam_record.POS)
 					{
-						if ((it2->m_sam_record.m_forward) && (it1->m_sam_record.m_forward == false))
+						if ((it2->m_sam_record.m_forward == true) && (it1->m_sam_record.m_forward == false))
 						{
 							std::swap(*it1, *it2);
-						}
-						else
-						{
-							if (it2->m_fastq_record.m_seq < it1->m_fastq_record.m_seq)
-							{
-								std::swap(*it1, *it2);
-							}
 						}
 					}
 				}
