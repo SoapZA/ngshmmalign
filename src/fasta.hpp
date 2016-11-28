@@ -1,5 +1,5 @@
-#ifndef FASTA_HPP
-#define FASTA_HPP
+#ifndef NGSHMMALIGN_FASTA_HPP
+#define NGSHMMALIGN_FASTA_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -21,8 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <cctype>
 #include <algorithm>
+#include <cctype>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -93,6 +93,6 @@ std::vector<T> fasta_read(const std::string& input_file)
 
 	return result;
 }
-}
+} // unnamed namespace
 
-#endif /* FASTA_HPP */
+#endif /* NGSHMMALIGN_FASTA_HPP */

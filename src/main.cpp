@@ -20,23 +20,23 @@
 
 #include <config.h>
 
-#include <iostream>
-#include <vector>
+#include <chrono>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <string>
 #include <thread>
 #include <tuple>
-#include <chrono>
-#include <cstdlib>
+#include <vector>
 
-#include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
+#include <boost/program_options.hpp>
 
-#include "dna_array.hpp"
-#include "hmmalign.hpp"
-#include "fasta.hpp"
-#include "reference.hpp"
 #include "aligner.hpp"
+#include "dna_array.hpp"
+#include "fasta.hpp"
+#include "hmmalign.hpp"
+#include "reference.hpp"
 
 int num_threads;
 
@@ -251,6 +251,8 @@ int main(int argc, const char* argv[])
 
 	/* 1) load reads */
 	ngs_aligner->load_reads(input_files);
+
+	return 0;
 
 	/* 2) load parameters */
 	ngs_aligner->load_parameters(profile_filename, params, ambig_bases_unequal_weight);

@@ -1,5 +1,5 @@
-#ifndef ALIGNER_IMPL_HPP
-#define ALIGNER_IMPL_HPP
+#ifndef NGSHMMALIGN_ALIGNER_IMPL_HPP
+#define NGSHMMALIGN_ALIGNER_IMPL_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -21,9 +21,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <cstdlib>
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -34,15 +34,16 @@
 #include <type_traits>
 #include <utility>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/progress.hpp>
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics.hpp>
+#include <boost/algorithm/string.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
+#include <boost/progress.hpp>
 
 #include <omp.h>
 
 #include "aligner.hpp"
+#include "debug.hpp"
 #include "fastq.hpp"
 
 namespace
@@ -50,29 +51,35 @@ namespace
 
 fastq_entry::fastq_entry(
 	const char* id_ptr,
-	std::size_t id_len,
+	const std::size_t id_len,
 	const char* seq_ptr,
-	std::size_t seq_len,
+	const std::size_t seq_len,
 	const char* qual_ptr,
-	std::size_t qual_len)
+	const std::size_t qual_len,
+	const bool second_in_pair)
 	: m_id(id_ptr, id_len),
 	  m_seq(seq_ptr, seq_len),
-	  m_qual(qual_ptr, qual_len) {}
+	  m_qual(qual_ptr, qual_len),
+	  m_second_in_pair(second_in_pair)
+{
+}
 
 read_entry::read_entry(
 	const char* id_ptr,
-	std::size_t id_len,
+	const std::size_t id_len,
 	const char* seq_ptr,
-	std::size_t seq_len,
+	const std::size_t seq_len,
 	const char* qual_ptr,
-	std::size_t qual_len)
+	const std::size_t qual_len,
+	const bool second_in_pair)
 	: m_fastq_record(
 		  id_ptr,
 		  id_len,
 		  seq_ptr,
 		  seq_len,
 		  qual_ptr,
-		  qual_len)
+		  qual_len,
+		  second_in_pair)
 {
 }
 
@@ -143,8 +150,7 @@ std::ostream& operator<<(
 	std::ostream& output,
 	const read_entry& read) noexcept
 {
-	auto write_clip_CIGAR = [](std::ostream& output, std::size_t length, clip_mode clip)
-	{
+	auto write_clip_CIGAR = [](std::ostream& output, std::size_t length, clip_mode clip) {
 		switch (clip)
 		{
 			case clip_mode::soft:
@@ -302,32 +308,30 @@ template <typename T>
 void single_end_aligner<T>::load_reads_impl(
 	const std::vector<std::string>& input_files) noexcept
 {
-	if (input_files.size() != 1)
-	{
-		std::terminate();
-	}
+	// only a single file allowed for single-end reads
+	assert(input_files.size() == 1);
+	m_reads.clear();
 
 	m_read_file_name = input_files.front();
-	std::cout << ++m_phase << ") Loading reads into memory from " << m_read_file_name << '\n';
-	m_reads_mmap.open(m_read_file_name);
-	m_reads = fastq_read<read_entry>(m_reads_mmap);
+	std::cout << ++m_phase << ") Loading single-end reads into memory from " << m_read_file_name << '\n';
+	fastq_read(m_read_file_name, m_reads, false, false);
 }
 
 template <typename T>
 void paired_end_aligner<T>::load_reads_impl(
 	const std::vector<std::string>& input_files) noexcept
 {
-	if (input_files.size() != 2)
-	{
-		std::terminate();
-	}
+	// need two files for paired-end reads
+	assert(input_files.size() == 2);
+	m_reads.clear();
 
-	single_end_aligner<T>::load_reads_impl(std::vector<std::string>{ input_files.front() });
+	m_read_file_name = input_files.front();
+	std::cout << ++m_phase << ") Loading (first) paired-end reads into memory from " << m_read_file_name << '\n';
+	fastq_read(m_read_file_name, m_reads, true, false);
 
 	m_read_file_name2 = input_files.back();
-	std::cout << "   Loading reads into memory from " << m_read_file_name2 << '\n';
-	m_reads2_mmap.open(m_read_file_name2);
-	m_reads2 = fastq_read<read_entry>(m_reads2_mmap);
+	std::cout << "   Loading (second) paired-end reads into memory from " << m_read_file_name2 << '\n';
+	fastq_read(m_read_file_name2, m_reads, true, true);
 }
 
 // 3. load parameters
@@ -354,7 +358,8 @@ void single_end_aligner<T>::load_parameters(
 	{
 		m_min_mapped_length = (L * 4) / 5;
 	}
-	std::cout << '\n' << error_rates << '\t' << "Minimum mapped length:   " << m_min_mapped_length << "\n\n";
+	std::cout << '\n'
+			  << error_rates << '\t' << "Minimum mapped length:   " << m_min_mapped_length << "\n\n";
 
 	std::string ref_ext(boost::filesystem::extension(input_file));
 	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
@@ -399,23 +404,8 @@ void single_end_aligner<T>::load_parameters(
 template <typename T>
 void single_end_aligner<T>::sort_reads() noexcept
 {
-	std::cout << ++m_phase << ") Sorting reads from " << m_read_file_name << '\n';
-	sort_reads_impl();
-}
-
-template <typename T>
-void single_end_aligner<T>::sort_reads_impl() noexcept
-{
+	std::cout << ++m_phase << ") Sorting reads\n";
 	std::sort(m_reads.begin(), m_reads.end(), comp_read_entry_by_queryname);
-}
-
-template <typename T>
-void paired_end_aligner<T>::sort_reads_impl() noexcept
-{
-	single_end_aligner<T>::sort_reads_impl();
-
-	std::cout << "   Sorting reads from " << m_read_file_name2 << '\n';
-	std::sort(m_reads2.begin(), m_reads2.end(), comp_read_entry_by_queryname);
 }
 
 // 5. perform parameter estimation
@@ -565,7 +555,8 @@ struct partioned_genome
 				i.m_reads[j]->print_sequence(output, true);
 				output << '\n';
 			}
-			output << ">REF\n" << reference.substr(i.m_start, i.m_end - i.m_start) << '\n';
+			output << ">REF\n"
+				   << reference.substr(i.m_start, i.m_end - i.m_start) << '\n';
 			output.close();
 		}
 	}
@@ -612,7 +603,8 @@ struct partioned_genome
 
 		//uint64_t r = 0;
 
-		std::cout << "Processing MAFFT aligned files\n" << std::fixed;
+		std::cout << "Processing MAFFT aligned files\n"
+				  << std::fixed;
 		for (const auto& i : m_regions)
 		{
 			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << '\n';
@@ -731,8 +723,7 @@ struct partioned_genome
 			}
 
 			// 5. determine parameters
-			auto remove_low_frequency_bases = [min_base_cutoff](dna_array<double, 5>& allel_freq) -> void
-			{
+			auto remove_low_frequency_bases = [min_base_cutoff](dna_array<double, 5>& allel_freq) -> void {
 				const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
 				for (char k : { 'A', 'C', 'G', 'T' })
 				{
@@ -814,11 +805,11 @@ void single_end_aligner<T>::estimate_parameters(
 
 	// 1. perform rough alignment first
 	std::cout << ++m_phase << ") Performing first rough alignment\n";
-	perform_alignment_impl(clip_mode::soft, seed, false, verbose, false);
+	alignment_impl(m_reads, m_parameters, clip_mode::soft, seed, false, verbose, false);
 
 	// 2. chop up genome and extract reads
 	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
-	estimate_parameters_impl(separated_reads, rng);
+	separated_reads.add_reads(m_reads, rng);
 
 	// 3. shuffle reads for subsampling
 	constexpr int32_t max_reads = 500;
@@ -852,30 +843,11 @@ void single_end_aligner<T>::estimate_parameters(
 	}
 }
 
-template <typename T>
-void single_end_aligner<T>::estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept
-{
-	separated_reads.add_reads(m_reads, generator);
-}
-
-template <typename T>
-void paired_end_aligner<T>::estimate_parameters_impl(partioned_genome& separated_reads, std::default_random_engine& generator) noexcept
-{
-	single_end_aligner<T>::estimate_parameters_impl(separated_reads, generator);
-	separated_reads.add_reads(m_reads2, generator);
-}
-
 // 6. perform alignment
 template <typename T>
 std::size_t single_end_aligner<T>::number_of_reads() const noexcept
 {
 	return m_reads.size();
-}
-
-template <typename T>
-std::size_t paired_end_aligner<T>::number_of_reads() const noexcept
-{
-	return single_end_aligner<T>::number_of_reads() + m_reads2.size();
 }
 
 template <typename T, typename std::enable_if<std::is_floating_point<T>::value, int>::type = 0>
@@ -888,8 +860,7 @@ void alignment_impl(
 	const bool verbose,
 	const bool differentiate_match_state) noexcept
 {
-	std::cerr << "T has to be an integral type!\n";
-	exit(EXIT_FAILURE);
+	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 }
 
 void display_progress(
@@ -947,8 +918,7 @@ void alignment_impl(
 	else
 	{
 #endif
-		display_func = []()
-		{
+		display_func = []() {
 		};
 	}
 	std::thread display_thread(display_func);
@@ -1025,8 +995,7 @@ void alignment_impl(
 				&alignment_stats,
 #endif
 				&parameters,
-				&rng](sam_entry& sam_alignment, const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, bool differentiate_match_state)
-			{
+				&rng](sam_entry& sam_alignment, const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, bool differentiate_match_state) {
 				int32_t POS;
 				int32_t end_POS;
 
@@ -1158,7 +1127,12 @@ void single_end_aligner<T>::perform_alignment(
 		std::cout << "   CIGAR 'M' will be replaced by '='/'X'\n";
 	}
 	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-	perform_alignment_impl(clip, seed, exhaustive, verbose, differentiate_match_state);
+
+	// actual alignment
+	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
+	alignment_impl(m_reads, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
+	std::cout << '\n';
+
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() / 1E9;
 	const double performance = number_of_reads() / duration;
@@ -1170,34 +1144,6 @@ void single_end_aligner<T>::perform_alignment(
 		<< static_cast<uint32_t>(duration) % 60 << "s ("
 		<< std::fixed << std::setprecision(1)
 		<< performance / num_threads << " reads/thread/s, " << performance << " reads/s).\n";
-}
-
-template <typename T>
-void single_end_aligner<T>::perform_alignment_impl(
-	const clip_mode clip,
-	const uint64_t seed,
-	const bool exhaustive,
-	const bool verbose,
-	const bool differentiate_match_state) noexcept
-{
-	std::cout << "   Aligning reads from " << m_read_file_name << " (" << m_reads.size() << ")" << std::flush;
-	alignment_impl(m_reads, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
-	std::cout << '\n';
-}
-
-template <typename T>
-void paired_end_aligner<T>::perform_alignment_impl(
-	const clip_mode clip,
-	const uint64_t seed,
-	const bool exhaustive,
-	const bool verbose,
-	const bool differentiate_match_state) noexcept
-{
-	single_end_aligner<T>::perform_alignment_impl(clip, seed, exhaustive, verbose, differentiate_match_state);
-
-	std::cout << "   Aligning reads from " << m_read_file_name2 << " (" << m_reads2.size() << ")" << std::flush;
-	alignment_impl(m_reads2, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
-	std::cout << '\n';
 }
 
 // 7. write alignment to output
@@ -1218,11 +1164,13 @@ void single_end_aligner<T>::write_alignment_to_file(
 
 		std::ofstream output;
 		output.open(data_root + "ref_majority.fasta");
-		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_majority_ref << '\n';
+		output << '>' << m_parameters.m_reference_genome_name << '\n'
+			   << m_parameters.m_majority_ref << '\n';
 		output.close();
 
 		output.open(data_root + "ref_ambig.fasta");
-		output << '>' << m_parameters.m_reference_genome_name << '\n' << m_parameters.m_ambig_ref << '\n';
+		output << '>' << m_parameters.m_reference_genome_name << '\n'
+			   << m_parameters.m_ambig_ref << '\n';
 		output.close();
 
 		std::string output_hmm_filename = m_parameters.m_reference_genome_name;
@@ -1288,9 +1236,10 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
+	/*
 	std::cout << "paired-end alignment\n";
 
-	/* first pass, set and correct flags and collect statistics */
+	// first pass, set and correct flags and collect statistics
 	const auto end1 = m_reads.end();
 	const auto end2 = m_reads2.end();
 
@@ -1360,7 +1309,7 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 		}
 	}
 
-	/* second pass, write output */
+	// second pass, write output
 	const int32_t MAX_TLEN = boost::accumulators::mean(acc) + 3 * std::sqrt(boost::accumulators::variance(acc));
 	std::cout << std::fixed
 			  << "     Mean[TLEN]: " << static_cast<int32_t>(boost::accumulators::mean(acc))
@@ -1496,7 +1445,8 @@ void paired_end_aligner<T>::write_alignment_to_file_impl(
 		<< "\tReads <--- ... <---:     " << num_rev_rev << '\n'
 		<< '\n'
 		<< "\tReads ---> ... <---:     " << num_for_rev << " (" << std::fixed << std::setprecision(1) << static_cast<double>(num_for_rev) * 100 / (m_reads.size() + m_reads2.size()) << "%)\n";
+	*/
 }
-}
+} // unnamed namespace
 
-#endif /* ALIGNER_IMPL_HPP */
+#endif /* NGSHMMALIGN_ALIGNER_IMPL_HPP */

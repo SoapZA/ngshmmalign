@@ -1,5 +1,5 @@
-#ifndef HMMALIGN_HPP
-#define HMMALIGN_HPP
+#ifndef NGSHMMALIGN_HMMALIGN_HPP
+#define NGSHMMALIGN_HMMALIGN_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -21,20 +21,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <vector>
-#include <string>
-#include <sstream>
-#include <list>
-#include <stack>
-#include <utility>
 #include <cmath>
+#include <list>
 #include <random>
+#include <sstream>
+#include <stack>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <boost/dynamic_bitset.hpp>
 
 #include "dna_array.hpp"
-#include "sam.hpp"
 #include "reference.hpp"
+#include "sam.hpp"
 
 namespace
 {
@@ -60,8 +60,8 @@ public:
 		uint32_t end,
 		bool differentiate_match_state);
 };
-}
+} // unnamed namespace
 
 #include "hmmalign_impl.hpp"
 
-#endif /* HMMALIGN_HPP */
+#endif /* NGSHMMALIGN_HMMALIGN_HPP */

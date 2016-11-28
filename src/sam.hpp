@@ -1,5 +1,5 @@
-#ifndef SAM_HPP
-#define SAM_HPP
+#ifndef NGSHMMALIGN_SAM_HPP
+#define NGSHMMALIGN_SAM_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -21,8 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <cstdint>
 #include <algorithm>
+#include <cstdint>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -102,6 +102,6 @@ struct sam_entry
 	{
 	}
 };
-}
+} // unnamed namespace
 
-#endif /* SAM_HPP */
+#endif /* NGSHMMALIGN_SAM_HPP */

@@ -1,5 +1,5 @@
-#ifndef DNA_ARRAY_HPP
-#define DNA_ARRAY_HPP
+#ifndef NGSHMMALIGN_DNA_ARRAY_HPP
+#define NGSHMMALIGN_DNA_ARRAY_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -63,8 +63,7 @@ public:
 			v.m_array.begin(),
 			v.m_array.end(),
 			this->m_array.begin(),
-			[](const V& i)
-			{
+			[](const V& i) {
 				return static_cast<T>(i);
 			});
 	}
@@ -122,9 +121,7 @@ public:
 template <typename T, std::size_t N>
 inline typename dna_array<T, N>::const_reference dna_array<T, N>::operator[](size_type pos) const noexcept
 {
-#ifndef NDEBUG
 	assert((0 <= pos) && (pos < N));
-#endif
 	return m_array[pos];
 }
 
@@ -184,6 +181,6 @@ inline typename dna_array<T, N>::reference dna_array<T, N>::operator[](char base
 {
 	return const_cast<reference>(static_cast<const dna_array<T, N>&>(*this)[base]);
 }
-}
+} // unnamed namespace
 
-#endif /* DNA_ARRAY_HPP */
+#endif /* NGSHMMALIGN_DNA_ARRAY_HPP */

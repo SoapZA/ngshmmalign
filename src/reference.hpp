@@ -1,5 +1,5 @@
-#ifndef REFERENCE_HPP
-#define REFERENCE_HPP
+#ifndef NGSHMMALIGN_REFERENCE_HPP
+#define NGSHMMALIGN_REFERENCE_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -34,13 +34,13 @@
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/utility/string_ref.hpp>
 #include <boost/functional/hash.hpp>
+#include <boost/lexical_cast.hpp>
 #include <boost/unordered_map.hpp>
+#include <boost/utility/string_ref.hpp>
 
-#include "utility_functions.hpp"
 #include "dna_array.hpp"
+#include "utility_functions.hpp"
 
 extern int num_threads;
 
@@ -272,9 +272,9 @@ private:
 	using hash_map_type = boost::unordered_map<std::string, std::vector<uint32_t>, boost_string_ref_hash, boost_string_ref_equal_to>;
 	hash_map_type m_kmer_index;
 };
-}
+} // unnamed namespace
 
-#include "reference_impl.hpp"
 #include "index_impl.hpp"
+#include "reference_impl.hpp"
 
-#endif /* REFERENCE_HPP */
+#endif /* NGSHMMALIGN_REFERENCE_HPP */

@@ -1,5 +1,5 @@
-#ifndef INDEX_IMPL_HPP
-#define INDEX_IMPL_HPP
+#ifndef NGSHMMALIGN_INDEX_IMPL_HPP
+#define NGSHMMALIGN_INDEX_IMPL_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -34,8 +34,7 @@ void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 	//m_kmer_length = desired_kmer_length;
 	constexpr int32_t max_kmers = 10000000;
 
-	auto expand_ambig_sequence = [&](const uint32_t POS, const uint32_t length)
-	{
+	auto expand_ambig_sequence = [&](const uint32_t POS, const uint32_t length) {
 		std::stack<char> S;
 		char v;
 		std::string cur_string;
@@ -173,4 +172,4 @@ typename reference_genome<T>::index_stat reference_genome<T>::find_pos(const boo
 }
 }
 
-#endif /* INDEX_IMPL_HPP */
+#endif /* NGSHMMALIGN_INDEX_IMPL_HPP */

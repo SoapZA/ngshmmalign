@@ -1,5 +1,5 @@
-#ifndef REFERENCE_IMPL_HPP
-#define REFERENCE_IMPL_HPP
+#ifndef NGSHMMALIGN_REFERENCE_IMPL_HPP
+#define NGSHMMALIGN_REFERENCE_IMPL_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -21,8 +21,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <cstdlib>
 #include <clocale>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -111,8 +111,7 @@ reference_genome<T>::reference_genome(const reference_genome<V>& v)
 		v.m_trans_matrix.begin(),
 		v.m_trans_matrix.end(),
 		this->m_trans_matrix.begin(),
-		[cast](const V_ref_type& i) -> T_ref_type
-		{
+		[cast](const V_ref_type& i) -> T_ref_type {
 			return {
 				{ cast(i.into_match.from_begin),
 					cast(i.into_match.from_left_clip),
@@ -329,8 +328,7 @@ void reference_genome<T>::init_parameters(
 	m_uniform_base_e['N'] = static_cast<T>(log_base(1.0));
 
 	// determine majority and ambiguous reference sequence
-	auto find_majority_and_ambiguous_base = [](dna_array<double, 5>& allel_freq, const double min_freq, std::default_random_engine& rng) -> std::pair<char, char>
-	{
+	auto find_majority_and_ambiguous_base = [](dna_array<double, 5>& allel_freq, const double min_freq, std::default_random_engine& rng) -> std::pair<char, char> {
 		// 1. determine coverage
 		const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
 
@@ -576,7 +574,8 @@ void reference_genome<T>::set_parameters(
 	std::ofstream debug_output("DEBUG_emissions.log");
 	for (std::string::size_type i = 0; i < L; ++i)
 	{
-		debug_output << "Pos " << i << ":\n" << E_p[i] << '\n';
+		debug_output << "Pos " << i << ":\n"
+					 << E_p[i] << '\n';
 	}
 	debug_output.close();
 #endif
@@ -852,4 +851,4 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 }
 }
 
-#endif /* REFERENCE_IMPL_HPP */
+#endif /* NGSHMMALIGN_REFERENCE_IMPL_HPP */

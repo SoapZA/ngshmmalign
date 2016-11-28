@@ -5,6 +5,7 @@ bin_PROGRAMS = ngshmmalign
 ngshmmalign_SOURCES = \
 	src/aligner.hpp \
 	src/aligner_impl.hpp \
+	src/debug.hpp \
 	src/dna_array.hpp \
 	src/fasta.hpp \
 	src/fastq.hpp \
@@ -16,7 +17,7 @@ ngshmmalign_SOURCES = \
 	src/sam.hpp \
 	src/utility_functions.hpp \
 	src/main.cpp
-	
+
 ngshmmalign_LDADD = \
 	$(BOOST_LDFLAGS) $(BOOST_SYSTEM_LIB) $(BOOST_PROGRAM_OPTIONS_LIB) $(BOOST_FILESYSTEM_LIB) $(BOOST_IOSTREAMS_LIB)
 

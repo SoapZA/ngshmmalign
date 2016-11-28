@@ -1,5 +1,5 @@
-#ifndef UTILITY_FUNCTIONS_HPP
-#define UTILITY_FUNCTIONS_HPP
+#ifndef NGSHMMALIGN_UTILITY_FUNCTIONS_HPP
+#define NGSHMMALIGN_UTILITY_FUNCTIONS_HPP
 
 /*
  * Copyright (c) 2016 David Seifert
@@ -23,9 +23,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <type_traits>
 #include <map>
 #include <string>
+#include <type_traits>
 
 namespace
 {
@@ -161,6 +161,6 @@ inline to_T type_caster(const from_T& from)
 {
 	return static_cast<to_T>(from);
 }
-}
+} // unnamed namespace
 
-#endif /* UTILITY_FUNCTIONS_HPP */
+#endif /* NGSHMMALIGN_UTILITY_FUNCTIONS_HPP */
