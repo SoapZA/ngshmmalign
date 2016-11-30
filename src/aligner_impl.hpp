@@ -868,7 +868,7 @@ void single_end_aligner<T>::perform_alignment(
 	}
 	std::thread display_thread(display_func);
 
-#pragma omp parallel shared(m_reads, progress)
+#pragma omp parallel shared(progress)
 	{
 		std::vector<minimal_alignment> forward_alns, reverse_alns;
 		T forward_score, reverse_score;
@@ -1294,7 +1294,7 @@ void single_end_aligner<T>::post_alignment_processing(const bool differentiate_m
 		}
 		MD_tag << MD_length;
 
-		return { edit_distance, MD_tag.str() };
+		return std::tuple<uint32_t, std::string>(edit_distance, MD_tag.str());
 	};
 
 	for (auto& i : m_reads)
