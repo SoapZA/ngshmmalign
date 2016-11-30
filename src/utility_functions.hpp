@@ -106,10 +106,7 @@ inline bool AlmostEqualRelative(T A, T B, T maxRelDiff = 1E-8)
 	// Find the largest
 	T largest = std::max(A, B);
 
-	if (diff <= largest * maxRelDiff)
-		return true;
-	else
-		return false;
+	return (diff <= largest * maxRelDiff);
 }
 
 // log function with arbitrary base

@@ -40,6 +40,9 @@
 
 int num_threads;
 
+clip_mode read_entry::m_clip = clip_mode::soft;
+boost::string_ref read_entry::RNAME;
+
 int main(int argc, const char* argv[])
 {
 	std::cout.imbue(std::locale("en_US.UTF-8"));
@@ -48,11 +51,11 @@ int main(int argc, const char* argv[])
 	std::string profile_filename;
 	std::string output_filename;
 	std::string rejects_filename;
-	std::string reference_genome_name;
+	std::string consensus_name;
 
 	background_rates params;
 
-	int32_t min_mapped_length;
+	int32_t min_required_mapped_bases;
 	uint64_t random_seed;
 
 	/* set up program options */
@@ -69,18 +72,17 @@ int main(int argc, const char* argv[])
 		(",o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
 		("wrong,w", boost::program_options::value<decltype(rejects_filename)>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
 		(",t", boost::program_options::value<decltype(num_threads)>(&num_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
-		(",u", "Keep unpaired reads")
 		(",l", "Do not clean up MAFFT temporary MSA files")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
-		(",N", boost::program_options::value<decltype(reference_genome_name)>(&reference_genome_name)->default_value("CONSENSUS"), "Name of consensus reference contig that will be created")
+		(",N", boost::program_options::value<decltype(consensus_name)>(&consensus_name)->default_value("CONSENSUS"), "Name of consensus reference contig that will be created")
 		(",U", "Loci with ambiguous bases get their emission probabilities according to their allele frequencies. In practice this is undesirable, as it leads to systematic accumulation of gaps in homopolymeric regions with SNVs")
 		("seed,s", boost::program_options::value<decltype(random_seed)>(&random_seed)->default_value(42), "Value of seed for deterministic run. A value of 0 will pick a random seed from some non-deterministic entropy source")
 		("hard", "Hard-clip reads. Clipped bases will NOT be in the sequence in the alignment")
 		("HARD", "Extreme Hard-clip reads. Do not write hard-clip in CIGAR, as if the hard-clipped bases never existed. Mutually exclusive with previous option")
 		(",v", "Show progress indicator while aligning")
 
-		(",M", boost::program_options::value<decltype(min_mapped_length)>(&min_mapped_length)->default_value(std::numeric_limits<decltype(min_mapped_length)>::max(), "L * 0.8"), "Minimum mapped length of read")
+		(",M", boost::program_options::value<decltype(min_required_mapped_bases)>(&min_required_mapped_bases)->default_value(std::numeric_limits<decltype(min_required_mapped_bases)>::max(), "L * 0.8"), "Minimum mapped length of read")
 		(",a", boost::program_options::value<decltype(params.low_frequency_cutoff)>(&params.low_frequency_cutoff)->default_value(0.05, "0.05"), "Minimum frequency for calling ambiguous base")
 
 		("error", boost::program_options::value<decltype(params.error_rate)>(&params.error_rate)->default_value(0.005, "0.005"), "Global substitution probability")
@@ -119,7 +121,7 @@ int main(int argc, const char* argv[])
 		// show help options
 		if (global_options.count("help"))
 		{
-			std::cout << visible << '\n';
+			std::cout << visible << std::endl;
 			exit(EXIT_SUCCESS);
 		}
 
@@ -129,22 +131,21 @@ int main(int argc, const char* argv[])
 	{
 		if (e.get_option_name() == "--input-files")
 		{
-			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
+			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s)." << std::endl;
 		}
 		else
 		{
-			std::cerr << "ERROR: " << e.what() << '\n';
+			std::cerr << "ERROR: " << e.what() << std::endl;
 		}
 		exit(EXIT_FAILURE);
 	}
 	catch (boost::program_options::error& e)
 	{
-		std::cerr << "ERROR: " << e.what() << '\n';
+		std::cerr << "ERROR: " << e.what() << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
 	/* 0.1) assign parameter values */
-	const bool write_unpaired = global_options.count("-u");
 	const bool exhaustive = global_options.count("-E");
 	const bool verbose = global_options.count("-v");
 	const bool differentiate_match_state = global_options.count("-X");
@@ -155,12 +156,12 @@ int main(int argc, const char* argv[])
 	switch (global_options.count("-r") + perform_hmm_learning)
 	{
 		case 0:
-			std::cerr << "ERROR: You need to specify either '-r' or '-R' for the reference.\n";
+			std::cerr << "ERROR: You need to specify either '-r' or '-R' for the reference." << std::endl;
 			exit(EXIT_FAILURE);
 			break;
 
 		case 2:
-			std::cerr << "ERROR: You cannot specify both '-r' and '-R'.\n";
+			std::cerr << "ERROR: You cannot specify both '-r' and '-R'." << std::endl;
 			exit(EXIT_FAILURE);
 			break;
 
@@ -175,7 +176,7 @@ int main(int argc, const char* argv[])
 		// try and find MAFFT
 		// 1. try via environmental variable
 		// 2. then try via PATH
-		// std::cout << "LINE: " << (mafft + " --help > /dev/null 2>&1") << '\n';
+		// std::cout << "LINE: " << (mafft + " --help > /dev/null 2>&1") << std::endl;
 
 		int result = std::system((mafft + " --help > /dev/null 2>&1").c_str());
 
@@ -183,50 +184,40 @@ int main(int argc, const char* argv[])
 		{
 			case 0:
 			case 1:
-				std::cout << "Found MAFFT via " << (env_var ? "MAFFT_BIN" : "PATH") << '\n';
+				std::cout << "Found MAFFT via " << (env_var ? "MAFFT_BIN" : "PATH") << std::endl;
 				break;
 
 			case 127:
-				std::cerr << "ERROR: Couldn't find MAFFT.\n";
+				std::cerr << "ERROR: Couldn't find MAFFT." << std::endl;
 				exit(EXIT_FAILURE);
 
 			default:
-				std::cerr << "ERROR: Unknown exit code returned.\n";
+				std::cerr << "ERROR: Unknown exit code returned." << std::endl;
 				exit(EXIT_FAILURE);
 		}
 	}
 
 	if (global_options.count("hard") && global_options.count("HARD"))
 	{
-		std::cerr << "ERROR: You cannot have both '--hard' and '--HARD' enabled.\n";
+		std::cerr << "ERROR: You cannot have both '--hard' and '--HARD' enabled." << std::endl;
 		exit(EXIT_FAILURE);
 	}
 	const clip_mode read_clip_mode = (global_options.count("hard") ? clip_mode::hard : (global_options.count("HARD") ? clip_mode::HARD : clip_mode::soft));
 
-	if (min_mapped_length <= 0)
+	if (min_required_mapped_bases <= 0)
 	{
-		std::cerr << "ERROR: -M has to be strictly positive.\n";
+		std::cerr << "ERROR: -M has to be strictly positive." << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
 	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
-	// set OpenMP properties
+	// set OpenMP number of threads
 	omp_set_num_threads(num_threads);
-	if (random_seed)
-	{
-		// deterministic
-		omp_set_schedule(omp_sched_static, 200);
-	}
-	else
-	{
-		// non-deterministic
-		omp_set_schedule(omp_sched_dynamic, 200);
-	}
 
 	if (!boost::filesystem::exists(profile_filename))
 	{
-		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!\n";
+		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 	boost::filesystem::path data_root_full_path(output_filename);
@@ -247,30 +238,28 @@ int main(int argc, const char* argv[])
 	rejects_filename = (rejects_full_path.has_parent_path() ? std::string() : data_root) + rejects_filename;
 
 	/* 0.2) create HMM aligner object */
-	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(input_files, min_mapped_length, argc, argv, write_unpaired);
+	auto ngs_aligner = single_end_aligner<int32_t>::create_aligner_instance(input_files, min_required_mapped_bases, argc, argv);
 
 	/* 1) load reads */
 	ngs_aligner->load_reads(input_files);
 
-	return 0;
-
 	/* 2) load parameters */
 	ngs_aligner->load_parameters(profile_filename, params, ambig_bases_unequal_weight);
 
-	/* 3) sort reads */
-	ngs_aligner->sort_reads();
-
-	/* 4) perform parameter estimation */
+	/* 3) perform parameter estimation */
 	if (perform_hmm_learning)
 	{
 		ngs_aligner->estimate_parameters(data_root, mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight);
 	}
 
-	/* 5) perform alignment */
-	ngs_aligner->perform_alignment(reference_genome_name, read_clip_mode, random_seed, exhaustive, verbose, differentiate_match_state);
+	/* 4) perform alignment */
+	ngs_aligner->perform_alignment(exhaustive, verbose);
+
+	/* 5) perform post-alignment processing */
+	ngs_aligner->post_alignment_processing(differentiate_match_state, random_seed, params.low_frequency_cutoff, params.error_rate, ambig_bases_unequal_weight);
 
 	/* 6) write alignment to output */
-	ngs_aligner->write_alignment_to_file(data_root, output_filename, rejects_filename);
+	ngs_aligner->write_alignment_to_file(read_clip_mode, consensus_name, data_root, output_filename, rejects_filename);
 
 	return EXIT_SUCCESS;
 }

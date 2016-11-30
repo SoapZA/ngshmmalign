@@ -60,7 +60,7 @@ reference_haplotype::reference_haplotype(const std::string& id, std::string&& se
 		}
 		catch (boost::bad_lexical_cast&)
 		{
-			std::cerr << "ERROR: Count argument '" << split_vec[1] << "' is not an integral/floating point value! Aborting.\n";
+			std::cerr << "ERROR: Count argument '" << split_vec[1] << "' is not an integral/floating point value! Aborting." << std::endl;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -156,6 +156,167 @@ void reference_genome<T>::set_parameters(
 }
 
 template <typename T>
+void reference_genome<T>::init_emission_table(
+	const std::vector<dna_array<double, 5>>& allel_freq_,
+	const double min_freq,
+	const double error_rate,
+	const bool ambig_bases_unequal_weight,
+	const bool sufficient_coverage_check)
+{
+	if (allel_freq_.size() != m_L)
+	{
+		std::cerr << "ERROR: New emission table 'table_base_abundance' (= " << allel_freq_.size() << ") and HMM length (= " << m_L << ") are unequal." << std::endl;
+		exit(EXIT_FAILURE);
+	}
+
+	m_uniform_base_e['A'] = static_cast<T>(log_base(0.25));
+	m_uniform_base_e['N'] = static_cast<T>(log_base(1.0));
+
+	// set position-specific emission matrix
+	m_allel_freq.resize(m_L);
+	m_E.resize(m_L);
+	m_table_of_included_bases.resize(m_L);
+
+	// determine majority and ambiguous reference sequence
+	std::string new_majority_ref;
+	std::string new_ambig_ref;
+
+	std::default_random_engine rng;
+
+	for (typename std::vector<dna_array<double, 5>>::size_type i = 0; i < allel_freq_.size(); ++i)
+	{
+		dna_array<double, 5> cur_allel_table = allel_freq_[i];
+
+		// 1. determine coverage
+		const double coverage = std::accumulate(&cur_allel_table[static_cast<std::size_t>(0)], &cur_allel_table[static_cast<std::size_t>(4)], 0.0);
+		if (coverage < 0)
+		{
+			// error out
+			std::cerr << "ERROR: Coverage is negative at position " << i << " of genome." << std::endl;
+			exit(EXIT_FAILURE);
+		}
+		else
+		{
+			if (coverage > 0)
+			{
+				// have coverage, can call a base
+				// 2. determine majority + ambiguous bases, normalize frequency components
+				std::string majority_bases, ambig_bases;
+				double majority_freq = -1;
+				double renormalization_sum = 0;
+				for (char j : { 'A', 'C', 'G', 'T' })
+				{
+					double& allel_freq = cur_allel_table[j];
+					allel_freq /= coverage;
+
+					if (allel_freq < 0)
+					{
+						// error out
+						std::cerr << "ERROR: Base '" << j << "' has negative coverage at position " << i << " of genome." << std::endl;
+						exit(EXIT_FAILURE);
+					}
+
+					// majority base
+					if (allel_freq >= majority_freq)
+					{
+						if (allel_freq > majority_freq)
+						{
+							majority_bases.clear();
+							majority_freq = allel_freq;
+						}
+
+						majority_bases.push_back(j);
+					}
+
+					// ambiguous bases
+					if (allel_freq > min_freq)
+					{
+						ambig_bases.push_back(j);
+						renormalization_sum += allel_freq;
+					}
+					else
+					{
+						allel_freq = 0;
+					}
+				}
+
+				// 3. call new majority + ambiguous bases, normalize frequencies for bases kept
+				char new_ambig_base, new_majority_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
+
+				const auto it = ambig_to_wobble_base.find(ambig_bases);
+				if (it != ambig_to_wobble_base.end())
+				{
+					new_ambig_base = it->second;
+				}
+				else
+				{
+					std::cerr << "ERROR: Could not map " << ambig_bases << " to a wobble base." << std::endl;
+					exit(EXIT_FAILURE);
+				}
+
+				if ((sufficient_coverage_check) && (coverage <= std::ceil(1.0 / min_freq)))
+				{
+					// low coverage, use majority base instead
+					cur_allel_table = { 0.0, 0.0, 0.0, 0.0, 0.0 };
+					cur_allel_table[new_majority_base] = 1.0;
+
+					new_majority_base = std::tolower(new_majority_base);
+					new_ambig_base = new_majority_base;
+				}
+				else
+				{
+					// just renormalize components
+					for (char j : { 'A', 'C', 'G', 'T' })
+					{
+						cur_allel_table[j] /= renormalization_sum;
+					}
+				}
+
+				new_majority_ref.push_back(new_majority_base);
+				new_ambig_ref.push_back(new_ambig_base);
+
+				// 4. fill emission tables
+				double temp;
+				for (char j : { 'A', 'C', 'G', 'T' })
+				{
+					temp = 0;
+					for (char k : { 'A', 'C', 'G', 'T' })
+					{
+						temp += cur_allel_table[k] * (j == k ? 1 - error_rate : error_rate / 3);
+					}
+					m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (cur_allel_table[j] ? 1.0 : temp))));
+					m_table_of_included_bases[i][j] = (cur_allel_table[j] > 0.0);
+				}
+
+				m_E[i]['N'] = static_cast<T>(log_base(1.0));
+				m_table_of_included_bases[i]['N'] = true;
+				m_allel_freq[i] = cur_allel_table;
+			}
+			else
+			{
+				// have no coverage, need to take sacrifical steps to construct
+				if ((m_emission_tables_initialized == true) && (m_ambig_ref.length() == m_L) && (m_majority_ref.length() == m_L))
+				{
+					// use old emissions from some other source
+					new_majority_ref.push_back(std::tolower(m_majority_ref[i]));
+					new_ambig_ref.push_back(std::tolower(m_ambig_ref[i]));
+				}
+				else
+				{
+					// error out
+					std::cerr << "ERROR: Emission table not yet initialised and no coverage at position " << i << " of genome." << std::endl;
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+	}
+
+	m_majority_ref = std::move(new_majority_ref);
+	m_ambig_ref = std::move(new_ambig_ref);
+	m_emission_tables_initialized = true;
+}
+
+template <typename T>
 void reference_genome<T>::init_parameters(
 	const background_rates& error_rates,
 	const bool ambig_bases_unequal_weight)
@@ -183,13 +344,13 @@ void reference_genome<T>::init_parameters(
 	/* HMM transition probabilities */
 	if (m_vec_M_to_D_p.size() != m_L - 1)
 	{
-		std::cerr << "m_vec_M_to_D_p (L = " << m_vec_M_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
-		std::terminate();
+		std::cerr << "m_vec_M_to_D_p (L = " << m_vec_M_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!" << std::endl;
+		exit(EXIT_FAILURE);
 	}
 	if (m_vec_D_to_D_p.size() != m_L - 1)
 	{
-		std::cerr << "m_vec_D_to_D_p (L = " << m_vec_D_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!\n";
-		std::terminate();
+		std::cerr << "m_vec_D_to_D_p (L = " << m_vec_D_to_D_p.size() << ") needs to have same length as emission matrix (L = " << m_L << ")!" << std::endl;
+		exit(EXIT_FAILURE);
 	}
 
 	std::vector<trans_matrix<double>> float_trans_matrix(m_L);
@@ -324,88 +485,15 @@ void reference_genome<T>::init_parameters(
 	////////////////////////////
 	// emission probabilities //
 	////////////////////////////
-	m_uniform_base_e['A'] = static_cast<T>(log_base(0.25));
-	m_uniform_base_e['N'] = static_cast<T>(log_base(1.0));
+	init_emission_table(
+		m_allel_freq,
+		error_rates.low_frequency_cutoff,
+		error_rates.error_rate,
+		ambig_bases_unequal_weight,
+		false);
 
-	// determine majority and ambiguous reference sequence
-	auto find_majority_and_ambiguous_base = [](dna_array<double, 5>& allel_freq, const double min_freq, std::default_random_engine& rng) -> std::pair<char, char> {
-		// 1. determine coverage
-		const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
-
-		// 2. determine majority + ambiguous bases, normalize frequency components
-		std::string majority_bases, ambig_bases;
-		double max_freq = -1;
-		for (char j : { 'A', 'C', 'G', 'T' })
-		{
-			// majority base
-			if (allel_freq[j] >= max_freq)
-			{
-				if (allel_freq[j] > max_freq)
-				{
-					majority_bases.clear();
-					max_freq = allel_freq[j];
-				}
-
-				majority_bases.push_back(j);
-			}
-
-			// ambiguous bases
-			if (allel_freq[j] > min_freq)
-			{
-				ambig_bases.push_back(j);
-			}
-
-			allel_freq[j] /= coverage;
-		}
-
-		const char maj_base = majority_bases[std::uniform_int_distribution<uint8_t>(0, majority_bases.length() - 1)(rng)];
-		if (coverage > std::ceil(1.0 / min_freq))
-		{
-			// high coverage, can use ambiguous base
-			return std::pair<char, char>(maj_base, ambig_to_wobble_base.find(ambig_bases)->second);
-		}
-		else
-		{
-			// low coverage, use majority base instead
-			return std::pair<char, char>(maj_base, maj_base);
-		}
-	};
-
-	// set position-specific emission matrix
-	m_E.resize(m_L);
-	m_table_of_included_bases.resize(m_L);
-
-	// determine majority and ambiguous reference sequence
-	m_majority_ref.clear();
-	m_ambig_ref.clear();
-
-	std::default_random_engine rng;
-	double temp;
-
-	for (typename std::vector<dna_array<double, 5>>::size_type i = 0; i < m_L; ++i)
-	{
-		// 1. determine majority, ambiguous bases and normalize
-		std::pair<char, char> maj_ambig_base = find_majority_and_ambiguous_base(m_allel_freq[i], error_rates.low_frequency_cutoff, rng);
-		m_majority_ref.push_back(maj_ambig_base.first);
-		m_ambig_ref.push_back(maj_ambig_base.second);
-
-		// 2. calculate emission probabilities
-		for (char j : { 'A', 'C', 'G', 'T' })
-		{
-			temp = 0;
-			for (char k : { 'A', 'C', 'G', 'T' })
-			{
-				temp += m_allel_freq[i][k] * (j == k ? 1 - error_rates.error_rate : error_rates.error_rate / 3);
-			}
-			m_E[i][j] = static_cast<T>(log_base((ambig_bases_unequal_weight ? temp : (m_allel_freq[i][j] ? 1.0 : temp))));
-			m_table_of_included_bases[i][j] = (m_allel_freq[i][j] > error_rates.low_frequency_cutoff);
-		}
-
-		m_E[i]['N'] = static_cast<T>(log_base(1.0));
-		m_table_of_included_bases[i]['N'] = true;
-	}
-
-	std::cout << '\t' << "Size of genome:          " << m_L << " nt\n\n";
+	std::cout << '\t' << "Size of genome:          " << m_L << " nt" << std::endl
+			  << std::endl;
 	create_index();
 }
 
@@ -454,13 +542,13 @@ void reference_genome<T>::set_parameters(
 	{
 		if (L != static_cast<int32_t>(refs[i].sequence.length()))
 		{
-			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' does not have length L = " << L << "! Aborting.\n";
+			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' does not have length L = " << L << "! Aborting." << std::endl;
 			exit(EXIT_FAILURE);
 		}
 
 		if (refs[i].count <= 0)
 		{
-			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' has non-positive count " << refs[i].count << "! Aborting.\n";
+			std::cerr << "ERROR: Haplotype '" << refs[i].name << "' has non-positive count " << refs[i].count << "! Aborting." << std::endl;
 			exit(EXIT_FAILURE);
 		}
 	}
@@ -474,7 +562,7 @@ void reference_genome<T>::set_parameters(
 			cur_base = refs[i].sequence[j];
 			if ((wobble_to_ambig_bases.find(cur_base) == wobble_to_ambig_bases.end()) && (cur_base != '-'))
 			{
-				std::cerr << "ERROR: Unknown base '" << cur_base << "' at position '" << j << "' of '" << refs[i].name << "'.\n";
+				std::cerr << "ERROR: Unknown base '" << cur_base << "' at position '" << j << "' of '" << refs[i].name << "'." << std::endl;
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -547,7 +635,7 @@ void reference_genome<T>::set_parameters(
 
 		if (onlyGap)
 		{
-			std::cerr << "ERROR: Position '" << j << "' only has gaps.\n";
+			std::cerr << "ERROR: Position '" << j << "' only has gaps." << std::endl;
 			exit(EXIT_FAILURE);
 		}
 
@@ -562,12 +650,6 @@ void reference_genome<T>::set_parameters(
 			M_D_p[j] = MD / (sumM ? sumM : 1);
 			D_D_p[j] = DD / (sumD ? sumD : 1);
 		}
-	}
-
-	if (num_haps == 1)
-	{
-		// provided only one sequence, do not write a consensus sequence
-		m_reference_genome_name = refs.front().name;
 	}
 
 #ifndef NDEBUG
@@ -627,7 +709,7 @@ void reference_genome<T>::load_from_file(std::istream& ifs)
 	// perform final sanity check on stream
 	if (ifs.fail() == true)
 	{
-		std::cerr << "\tERROR during reading of parameters, aborting\n";
+		std::cerr << "\tERROR during reading of parameters, aborting." << std::endl;
 		exit(EXIT_FAILURE);
 	}
 }
@@ -672,8 +754,8 @@ void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summatio
 	V diff = std::fabs(v - 1.0);
 	if ((diff > 1E-4) && (fail_on_non_summation))
 	{
-		std::cerr << std::setprecision(12) << "Failed sum: " << diff << '\n';
-		std::terminate();
+		std::cerr << std::setprecision(12) << "ERROR: Failed sum: " << diff << std::endl;
+		exit(EXIT_FAILURE);
 	}
 }
 
@@ -689,7 +771,7 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 	output
 		<< std::setprecision(3) << std::fixed;
 	output
-		<< "HMM Transition tables for <" << typeid(m_trans_matrix[0].into_match.from_left_clip).name() << ">:\n";
+		<< "HMM Transition tables for <" << typeid(m_trans_matrix[0].into_match.from_left_clip).name() << ">:" << std::endl;
 
 	constexpr int tr_col_width = 8;
 	constexpr int value_col_width = 9;
@@ -699,26 +781,27 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 		<< std::left << std::setw(tr_col_width) << "BEG"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_L" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_begin << '\n';
+		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_begin << std::endl;
 	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "M_j" << ':'
-		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_begin << '\n';
+		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_begin << std::endl;
 	print_sum<T>(output, m_into_left_clip.from_begin + m_L * m_trans_matrix[0].into_match.from_begin, fail_on_non_summation, "\n", "Sum:");
 
 	/* LEFT CLIP */
 	output
-		<< "\n\n"
+		<< std::endl
+		<< std::endl
 		<< std::left << std::setw(tr_col_width) << "S_L"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_L" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_left_clip << '\n';
+		<< std::right << std::setw(value_col_width) << m_into_left_clip.from_left_clip << std::endl;
 	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "M_j" << ':'
-		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_left_clip << '\n';
+		<< std::right << std::setw(value_col_width) << m_trans_matrix[0].into_match.from_left_clip << std::endl;
 	print_sum<T>(output, m_into_left_clip.from_left_clip + m_L * m_trans_matrix[0].into_match.from_left_clip, fail_on_non_summation, "\n", "Sum:");
 
 	/* MAIN STATES */
@@ -726,7 +809,8 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 	{
 		// first row
 		output
-			<< "\n\n"
+			<< std::endl
+			<< std::endl
 			<< std::left << "M_" << std::setw(tr_col_width - 2) << i
 			<< u8"\u2500\u252C\u2500> "
 			<< std::left << "M_" << std::setw(5) << i + 1 << ':'
@@ -750,7 +834,7 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 
 		// second row
 		output
-			<< '\n'
+			<< std::endl
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
 			<< std::left << "D_" << std::setw(5) << i + 1 << ':'
@@ -774,25 +858,25 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 
 		// third row
 		output
-			<< '\n'
+			<< std::endl
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
 			<< std::left << "I_" << std::setw(5) << i << ':'
-			<< std::right << std::setw(value_col_width) << m_trans_matrix[i].into_insertion.from_match << '\n';
+			<< std::right << std::setw(value_col_width) << m_trans_matrix[i].into_insertion.from_match << std::endl;
 
 		// fourth row
 		output
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u251C\u2500> "
 			<< std::left << std::setw(5 + 2) << "S_R" << ':'
-			<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << '\n';
+			<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << std::endl;
 
 		// fifth row
 		output
 			<< std::left << std::string(tr_col_width, ' ')
 			<< u8" \u2514\u2500> "
 			<< std::left << std::setw(5 + 2) << "END" << ':'
-			<< std::right << std::setw(value_col_width) << m_into_end.from_match << '\n';
+			<< std::right << std::setw(value_col_width) << m_into_end.from_match << std::endl;
 
 		print_sum<T>(output,
 			m_trans_matrix[i + 1].into_match.from_match + m_trans_matrix[i + 1].into_deletion.from_match + m_trans_matrix[i].into_insertion.from_match + m_into_right_clip.from_match + m_into_end.from_match,
@@ -813,39 +897,44 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 
 	/* LAST MATCH STATE */
 	output
-		<< "\n\n"
+		<< std::endl
+		<< std::endl
 		<< std::left << "M_" << std::setw(tr_col_width - 2) << m_L - 1
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_R" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << "\n";
+		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_match << std::endl;
 	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "END" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_end.from_last_match << '\n';
+		<< std::right << std::setw(value_col_width) << m_into_end.from_last_match << std::endl;
 	print_sum<T>(output, m_into_right_clip.from_match + m_into_end.from_last_match, fail_on_non_summation, "\n", "Sum:");
 
 	/* RIGHT CLIP */
 	output
-		<< "\n\n"
+		<< std::endl
+		<< std::endl
 		<< std::left << std::setw(tr_col_width) << "S_R"
 		<< u8"\u2500\u252C\u2500> "
 		<< std::left << std::setw(5 + 2) << "S_R" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_right_clip << '\n';
+		<< std::right << std::setw(value_col_width) << m_into_right_clip.from_right_clip << std::endl;
 	output
 		<< std::left << std::string(tr_col_width, ' ')
 		<< u8" \u2514\u2500> "
 		<< std::left << std::setw(5 + 2) << "END" << ':'
-		<< std::right << std::setw(value_col_width) << m_into_end.from_right_clip << '\n';
+		<< std::right << std::setw(value_col_width) << m_into_end.from_right_clip << std::endl;
 	print_sum<T>(output, m_into_right_clip.from_right_clip + m_into_end.from_right_clip, fail_on_non_summation, "\n", "Sum:");
 
 	int j = 0;
-	output << "\nEmission tables (log):\n";
+	output << std::endl
+		   << "Emission tables (log):" << std::endl;
 	for (const auto& i : m_E)
 	{
-		output << j++ << ":\t" << i << '\n';
+		output << j++ << ":\t" << i << std::endl;
 	}
-	output << "\nEmission tables (uniform):\n\t" << m_uniform_base_e << '\n';
+	output << std::endl
+		   << "Emission tables (uniform):" << std::endl
+		   << '\t' << m_uniform_base_e << std::endl;
 
 	return true;
 }

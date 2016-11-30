@@ -14,7 +14,6 @@ ngshmmalign_SOURCES = \
 	src/index_impl.hpp \
 	src/reference.hpp \
 	src/reference_impl.hpp \
-	src/sam.hpp \
 	src/utility_functions.hpp \
 	src/main.cpp
 

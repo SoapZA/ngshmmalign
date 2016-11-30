@@ -39,7 +39,7 @@ std::vector<T> fasta_read(const std::string& input_file)
 {
 	if (!boost::filesystem::exists(input_file))
 	{
-		std::cerr << "ERROR: Reference file '" << input_file << "' does not exist!\n";
+		std::cerr << "ERROR: Reference file '" << input_file << "' does not exist!" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -80,8 +80,8 @@ std::vector<T> fasta_read(const std::string& input_file)
 	}
 	else
 	{
-		std::cerr << "Input file '" << input_file << "' could not be opened!\n";
-		std::terminate();
+		std::cerr << "ERROR: Input file '" << input_file << "' could not be opened!" << std::endl;
+		exit(EXIT_FAILURE);
 	}
 	input.close();
 

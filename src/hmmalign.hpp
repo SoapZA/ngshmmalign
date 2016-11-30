@@ -34,10 +34,38 @@
 
 #include "dna_array.hpp"
 #include "reference.hpp"
-#include "sam.hpp"
 
 namespace
 {
+
+// first: operation
+//
+using CIGAR_vec = std::vector<std::pair<char, uint32_t>>;
+
+struct minimal_alignment
+{
+	CIGAR_vec m_CIGAR;
+
+	// 0-based position of first mapped base
+	int32_t m_POS;
+
+	// number of bases clipped on left
+	int32_t m_left_clip_length = 0;
+
+	// number of bases clipped on right
+	int32_t m_right_clip_length = 0;
+
+	// number of mapped bases
+	// = (number of bases) - (number of clipped bases)
+	// = (number of M ops) + (number of I ops)
+	int32_t m_mapped_bases = 0;
+
+	// length of segment on genome from first mapped base to last mapped base
+	// = (number of M ops) + (number of D ops)
+	int32_t m_segment_length = 0;
+
+	minimal_alignment(const std::vector<char>& alignment_, uint32_t POS_) noexcept;
+};
 
 template <typename T>
 class hmmalign
@@ -52,13 +80,12 @@ public:
 	}
 
 	// OPTIMAL ALIGNMENT of a sequence
-	static sam_entry viterbi(
+	static T viterbi(
 		const reference_genome<T>& parameters,
 		const boost::string_ref& sequence,
-		std::default_random_engine& generator,
-		uint32_t start,
-		uint32_t end,
-		bool differentiate_match_state);
+		uint32_t ref_start,
+		uint32_t ref_end,
+		std::vector<minimal_alignment>& alignments) noexcept;
 };
 } // unnamed namespace
 

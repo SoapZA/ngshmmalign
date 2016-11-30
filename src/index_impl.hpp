@@ -21,6 +21,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
+#include <stack>
+#include <string>
+
 #include <boost/accumulators/accumulators.hpp>
 #include <boost/accumulators/statistics.hpp>
 
@@ -116,11 +119,11 @@ void reference_genome<T>::create_index(const uint16_t desired_kmer_length)
 
 		if (too_large == true)
 		{
-			std::cout << " -> too large\n";
+			std::cout << " -> too large" << std::endl;
 		}
 		else
 		{
-			std::cout << " -> " << m_kmer_index.size() << " unique k-mers\n";
+			std::cout << " -> " << m_kmer_index.size() << " unique k-mers" << std::endl;
 			break;
 		}
 	}

@@ -84,7 +84,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 						//                identifies first(1) or second(2) in pair
 						if (start_line_ptr[0] != '@')
 						{
-							std::cerr << "ERROR: Malformed FASTQ header line " << input_file << " on line " << line << " does not start with '@'.\n";
+							std::cerr << "ERROR: Malformed FASTQ header line " << input_file << " on line " << line << " does not start with '@'." << std::endl;
 							exit(EXIT_FAILURE);
 						}
 
@@ -132,7 +132,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 					case 2: // '+' with possibly id following again
 						if (start_line_ptr[0] != '+')
 						{
-							std::cerr << "ERROR: Malformed FASTQ spacer line " << input_file << " on line " << line << " does not start with '+'.\n";
+							std::cerr << "ERROR: Malformed FASTQ spacer line " << input_file << " on line " << line << " does not start with '+'." << std::endl;
 							exit(EXIT_FAILURE);
 						}
 
@@ -140,7 +140,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 						if ((spacer_length) && (spacer_length != header_length))
 						{
 							// should contain copy of sequence
-							std::cerr << "ERROR: Malformed FASTQ spacer line " << input_file << " on line " << line << " does not have same length (" << spacer_length << ") as header length (" << header_length << ").\n";
+							std::cerr << "ERROR: Malformed FASTQ spacer line " << input_file << " on line " << line << " does not have same length (" << spacer_length << ") as header length (" << header_length << ")." << std::endl;
 							exit(EXIT_FAILURE);
 						}
 
@@ -153,7 +153,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 
 						if (seq_len != qual_len)
 						{
-							std::cerr << "ERROR: Sequence and Phred qualities have different lengths on line " << line << ".\n";
+							std::cerr << "ERROR: Sequence and Phred qualities have different lengths on line " << line << '.' << std::endl;
 							exit(EXIT_FAILURE);
 						}
 
@@ -204,12 +204,12 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 						case 'g':
 						case 't':
 						case 'n':
-							std::cerr << "ERROR: Malformed FASTQ sequence line " << input_file << " on line " << line << " contains lowercase DNA character '" << cur_letter << "'. DNA characters need to be uppercase.\n";
+							std::cerr << "ERROR: Malformed FASTQ sequence line " << input_file << " on line " << line << " contains lowercase DNA character '" << cur_letter << "'. DNA characters need to be uppercase." << std::endl;
 							exit(EXIT_FAILURE);
 							break;
 
 						default:
-							std::cerr << "ERROR: Malformed FASTQ sequence line " << input_file << " on line " << line << " contains invalid character '" << cur_letter << "'. Allowed DNA characters are 'A', 'C', 'G', 'T' and 'N'.\n";
+							std::cerr << "ERROR: Malformed FASTQ sequence line " << input_file << " on line " << line << " contains invalid character '" << cur_letter << "'. Allowed DNA characters are 'A', 'C', 'G', 'T' and 'N'." << std::endl;
 							exit(EXIT_FAILURE);
 							break;
 					}
@@ -218,7 +218,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 				case 3:
 					if ((cur_letter < 33) || (cur_letter > 73))
 					{
-						std::cerr << "ERROR: Malformed FASTQ quality line " << input_file << " on line " << line << " contains invalid quality character '" << cur_letter << "'. The range has to start at '!' (= 0) and end at 'I' (= 41), inclusive.\n";
+						std::cerr << "ERROR: Malformed FASTQ quality line " << input_file << " on line " << line << " contains invalid quality character '" << cur_letter << "'. The range has to start at '!' (= 0) and end at 'I' (= 41), inclusive." << std::endl;
 						exit(EXIT_FAILURE);
 					}
 					break;

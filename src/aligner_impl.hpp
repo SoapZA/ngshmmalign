@@ -83,66 +83,33 @@ read_entry::read_entry(
 {
 }
 
-inline bool comp_read_entry_by_queryname(
-	const read_entry& lhs,
-	const read_entry& rhs) noexcept
+inline void read_entry::print_sequence_qual(std::ostream& output, bool clip_bases, boost::string_ref str) const noexcept
 {
-	return (lhs.m_fastq_record.m_id < rhs.m_fastq_record.m_id);
+	const uint32_t left_clip = (clip_bases ? get_opt_aln().m_left_clip_length : 0);
+	const uint32_t right_clip = (clip_bases ? get_opt_aln().m_right_clip_length : 0);
+
+	std::ostream_iterator<decltype(str)::value_type> out_it(output);
+	std::copy(str.cbegin() + left_clip, str.cend() - right_clip, out_it);
 }
 
-template <typename T, typename V>
-inline void write_seq_qual(
-	std::ostream& output,
-	T iter_start,
-	T iter_end,
-	V visitor) noexcept
+inline void read_entry::set_opt_aln(std::size_t i) noexcept
 {
-	for (T i = iter_start; i != iter_end; ++i)
-	{
-		output << visitor(*i);
-	}
+	assert(i < m_cooptimal_alignments.size());
+
+	std::swap(m_cooptimal_alignments.front(), m_cooptimal_alignments[i]);
+	m_cooptimal_alignments.erase(m_cooptimal_alignments.begin() + 1, m_cooptimal_alignments.end());
+
+	assert(m_cooptimal_alignments.size() == 1);
 }
 
-void read_entry::print_sequence(std::ostream& output, bool clip_bases) const noexcept
+inline minimal_alignment& read_entry::get_opt_aln() noexcept
 {
-	const uint32_t left_clip = (clip_bases ? m_sam_record.m_left_clip_length : 0);
-	const uint32_t right_clip = (clip_bases ? m_sam_record.m_right_clip_length : 0);
-
-	if (m_sam_record.m_forward)
-	{
-		// forward aligned
-		auto it_start = m_fastq_record.m_seq.cbegin() + left_clip;
-		auto it_end = m_fastq_record.m_seq.cend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-	}
-	else
-	{
-		// reverse complement aligned
-		auto it_start = m_fastq_record.m_seq.crbegin() + left_clip;
-		auto it_end = m_fastq_record.m_seq.crend() - right_clip;
-		write_seq_qual(output, it_start, it_end, rev_comp_char);
-	}
+	return const_cast<minimal_alignment&>(static_cast<const read_entry&>(*this).get_opt_aln());
 }
 
-void read_entry::print_qual(std::ostream& output, bool clip_bases) const noexcept
+inline const minimal_alignment& read_entry::get_opt_aln() const noexcept
 {
-	const uint32_t left_clip = (clip_bases ? m_sam_record.m_left_clip_length : 0);
-	const uint32_t right_clip = (clip_bases ? m_sam_record.m_right_clip_length : 0);
-
-	if (m_sam_record.m_forward)
-	{
-		// forward aligned
-		auto it_start = m_fastq_record.m_qual.cbegin() + left_clip;
-		auto it_end = m_fastq_record.m_qual.cend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-	}
-	else
-	{
-		// reverse complement aligned
-		auto it_start = m_fastq_record.m_qual.crbegin() + left_clip;
-		auto it_end = m_fastq_record.m_qual.crend() - right_clip;
-		write_seq_qual(output, it_start, it_end, identity_char);
-	}
+	return m_cooptimal_alignments.front();
 }
 
 // output
@@ -175,46 +142,48 @@ std::ostream& operator<<(
 	///////////////////////////////////////
 	// QNAME + FLAG + RNAME + POS + MAPQ //
 	///////////////////////////////////////
+	uint16_t FLAG = (read.m_paired_read * 0x1) | (read.m_mapped_in_proper_pair * 0x2) | (read.m_reverse_compl * 0x10) | (read.m_mate_reverse_compl * 0x20) | (read.m_paired_read * (read.m_fastq_record.m_second_in_pair ? 0x80 : 0x40));
+
 	output
 		<< read.m_fastq_record.m_id << '\t'
-		<< read.m_sam_record.FLAG << '\t'
-		<< (read.m_sam_record.RNAME ? read.m_sam_record.RNAME : "*") << '\t'
-		<< read.m_sam_record.POS + 1 << '\t'
-		<< read.m_sam_record.MAPQ << '\t';
+		<< FLAG << '\t'
+		<< read.RNAME << '\t'
+		<< read.get_opt_aln().m_POS + 1 << '\t'
+		<< read.MAPQ << '\t';
 
 	///////////
 	// CIGAR //
 	///////////
-	write_clip_CIGAR(output, read.m_sam_record.m_left_clip_length, read.m_sam_record.m_clip);
-	for (const auto& i : read.m_sam_record.CIGAR)
+	write_clip_CIGAR(output, read.get_opt_aln().m_left_clip_length, read.m_clip);
+	for (const auto& i : read.get_opt_aln().m_CIGAR)
 	{
 		output << i.second << i.first;
 	}
-	write_clip_CIGAR(output, read.m_sam_record.m_right_clip_length, read.m_sam_record.m_clip);
+	write_clip_CIGAR(output, read.get_opt_aln().m_right_clip_length, read.m_clip);
 
 	//////////////////////////
 	// RNEXT + PNEXT + TLEN //
 	//////////////////////////
 	output
-		<< '\t' << read.m_sam_record.RNEXT
-		<< '\t' << read.m_sam_record.PNEXT + 1
-		<< '\t' << read.m_sam_record.TLEN << '\t';
+		<< '\t' << read.RNEXT
+		<< '\t' << read.PNEXT + 1
+		<< '\t' << read.TLEN << '\t';
 
 	////////////////
 	// SEQ + QUAL //
 	////////////////
-	bool clip_bases = ((read.m_sam_record.m_clip == clip_mode::hard) || (read.m_sam_record.m_clip == clip_mode::HARD));
-	read.print_sequence(output, clip_bases);
+	bool clip_bases = ((read.m_clip == clip_mode::hard) || (read.m_clip == clip_mode::HARD));
+	read.print_sequence_qual(output, clip_bases, read.m_fastq_record.m_seq);
 	output << '\t';
-	read.print_qual(output, clip_bases);
+	read.print_sequence_qual(output, clip_bases, read.m_fastq_record.m_qual);
 
 	/////////////////////////////////////
 	// Alignment Score + Edit Distance //
 	/////////////////////////////////////
 	return output
-		<< '\t' << "NM:i:" << read.m_sam_record.NM
-		<< '\t' << "MD:Z:" << read.m_sam_record.MD
-		<< '\t' << "AS:i:" << read.m_sam_record.SCORE << '\n';
+		<< '\t' << "NM:i:" << read.NM
+		<< '\t' << "MD:Z:" << read.MD_tag
+		<< '\t' << "AS:i:" << read.SCORE;
 }
 
 template <typename T>
@@ -243,32 +212,31 @@ uint32_t single_end_aligner<T>::get_length_profile() const noexcept
 	return result;
 }
 
-// 1. ctor
+// 1. factory function
 template <typename T>
 std::unique_ptr<single_end_aligner<T>> single_end_aligner<T>::create_aligner_instance(
 	const std::vector<std::string>& input_files,
-	const int32_t min_mapped_length,
+	const int32_t min_required_mapped_bases_,
 	const int argc,
-	const char** argv,
-	const bool write_unpaired) noexcept
+	const char** argv) noexcept
 {
 	switch (input_files.size())
 	{
 		case 0:
-			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
+			std::cerr << "ERROR: You have provided no input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s)." << std::endl;
 			exit(EXIT_FAILURE);
 			break;
 
 		case 1:
-			return std::unique_ptr<single_end_aligner<T>>(new single_end_aligner<T>(min_mapped_length, argc, argv));
+			return std::unique_ptr<single_end_aligner<T>>(new single_end_aligner<T>(min_required_mapped_bases_, argc, argv));
 			break;
 
 		case 2:
-			return std::unique_ptr<single_end_aligner<T>>(new paired_end_aligner<T>(min_mapped_length, argc, argv, write_unpaired));
+			return std::unique_ptr<single_end_aligner<T>>(new paired_end_aligner<T>(min_required_mapped_bases_, argc, argv));
 			break;
 
 		default:
-			std::cerr << "ERROR: You have provided too many input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s).\n";
+			std::cerr << "ERROR: You have provided too many input files. ngshmmalign takes either 1 (single-end) or 2 (paired-end) input file(s)." << std::endl;
 			exit(EXIT_FAILURE);
 			break;
 	}
@@ -276,23 +244,21 @@ std::unique_ptr<single_end_aligner<T>> single_end_aligner<T>::create_aligner_ins
 
 template <typename T>
 single_end_aligner<T>::single_end_aligner(
-	const int32_t min_mapped_length_,
+	const int32_t min_required_mapped_bases_,
 	const int argc_,
 	const char** argv_) noexcept
 	: m_argc(argc_),
 	  m_argv(argv_),
-	  m_min_mapped_length(min_mapped_length_)
+	  m_min_required_mapped_bases(min_required_mapped_bases_)
 {
 }
 
 template <typename T>
 paired_end_aligner<T>::paired_end_aligner(
-	const int32_t min_mapped_length_,
+	const int32_t min_required_mapped_bases_,
 	const int argc_,
-	const char** argv_,
-	const bool write_unpaired) noexcept
-	: single_end_aligner<T>(min_mapped_length_, argc_, argv_),
-	  m_write_unpaired(write_unpaired)
+	const char** argv_) noexcept
+	: single_end_aligner<T>(min_required_mapped_bases_, argc_, argv_)
 {
 }
 
@@ -313,7 +279,7 @@ void single_end_aligner<T>::load_reads_impl(
 	m_reads.clear();
 
 	m_read_file_name = input_files.front();
-	std::cout << ++m_phase << ") Loading single-end reads into memory from " << m_read_file_name << '\n';
+	std::cout << ++m_phase << ") Loading single-end reads into memory from " << m_read_file_name << std::endl;
 	fastq_read(m_read_file_name, m_reads, false, false);
 }
 
@@ -326,11 +292,11 @@ void paired_end_aligner<T>::load_reads_impl(
 	m_reads.clear();
 
 	m_read_file_name = input_files.front();
-	std::cout << ++m_phase << ") Loading (first) paired-end reads into memory from " << m_read_file_name << '\n';
+	std::cout << ++m_phase << ") Loading (first) paired-end reads into memory from " << m_read_file_name << std::endl;
 	fastq_read(m_read_file_name, m_reads, true, false);
 
 	m_read_file_name2 = input_files.back();
-	std::cout << "   Loading (second) paired-end reads into memory from " << m_read_file_name2 << '\n';
+	std::cout << "   Loading (second) paired-end reads into memory from " << m_read_file_name2 << std::endl;
 	fastq_read(m_read_file_name2, m_reads, true, true);
 }
 
@@ -341,10 +307,11 @@ void single_end_aligner<T>::load_parameters(
 	background_rates& error_rates,
 	const bool ambig_bases_unequal_weight) noexcept
 {
-	std::cout << ++m_phase << ") Loading profile HMM parameters\n";
+	std::cout << ++m_phase << ") Loading profile HMM parameters" << std::endl;
 
 	uint32_t L = get_length_profile();
-	std::cout << "   Using Illumina length profile " << L << "\n   Parameters for pHMM:\n";
+	std::cout << "   Using Illumina length profile " << L << std::endl
+			  << "   Parameters for pHMM:" << std::endl;
 
 	if (error_rates.end_prob == MAGIC_NUMBER)
 	{
@@ -354,17 +321,18 @@ void single_end_aligner<T>::load_parameters(
 	{
 		error_rates.right_clip_open = error_rates.left_clip_open / L;
 	}
-	if (m_min_mapped_length == std::numeric_limits<decltype(m_min_mapped_length)>::max())
+	if (m_min_required_mapped_bases == std::numeric_limits<decltype(m_min_required_mapped_bases)>::max())
 	{
-		m_min_mapped_length = (L * 4) / 5;
+		m_min_required_mapped_bases = (L * 4) / 5;
 	}
-	std::cout << '\n'
-			  << error_rates << '\t' << "Minimum mapped length:   " << m_min_mapped_length << "\n\n";
+	std::cout << std::endl
+			  << error_rates << '\t' << "Minimum mapped length:   " << m_min_required_mapped_bases << std::endl
+			  << std::endl;
 
 	std::string ref_ext(boost::filesystem::extension(input_file));
 	if ((ref_ext == ".fasta") || (ref_ext == ".fas") || (ref_ext == ".fna"))
 	{
-		std::cout << "   Input = FASTA\n";
+		std::cout << "   Input = FASTA" << std::endl;
 		m_parameters.set_parameters(
 			input_file,
 			error_rates,
@@ -374,7 +342,7 @@ void single_end_aligner<T>::load_parameters(
 	}
 	else if (ref_ext == ".hmm")
 	{
-		std::cout << "   Input = " PACKAGE " serialised format\n";
+		std::cout << "   Input = " PACKAGE " serialised format" << std::endl;
 		m_parameters.set_parameters(
 			input_file,
 			error_rates,
@@ -384,31 +352,12 @@ void single_end_aligner<T>::load_parameters(
 	}
 	else
 	{
-		std::cerr << "ERROR: file ending" << ref_ext << " not recognized\n";
+		std::cerr << "ERROR: file ending" << ref_ext << " not recognized" << std::endl;
 		exit(EXIT_FAILURE);
 	}
-
-	if (m_parameters.m_reference_genome_name.empty())
-	{
-		// have a multiple sequence alignment
-		serialize = true;
-	}
-	else
-	{
-		// only a single reference sequence given
-		serialize = false;
-	}
 }
 
-// 4. sort reads
-template <typename T>
-void single_end_aligner<T>::sort_reads() noexcept
-{
-	std::cout << ++m_phase << ") Sorting reads\n";
-	std::sort(m_reads.begin(), m_reads.end(), comp_read_entry_by_queryname);
-}
-
-// 5. perform parameter estimation
+// 4. perform parameter estimation
 struct partioned_genome
 {
 	struct region
@@ -442,7 +391,7 @@ struct partioned_genome
 	const int32_t m_offset;
 	const int32_t m_num_bins;
 
-	const int32_t m_min_mapped_length;
+	const int32_t m_min_required_mapped_bases;
 
 	partioned_genome() = delete;
 	partioned_genome(const partioned_genome&) = delete;
@@ -453,7 +402,7 @@ struct partioned_genome
 	partioned_genome(const std::string& tmpdir, const int32_t L, const int32_t read_profile) noexcept
 		: m_offset(read_profile / 6),
 		  m_num_bins(L / m_offset),
-		  m_min_mapped_length(read_profile * 0.8)
+		  m_min_required_mapped_bases(read_profile * 0.8)
 	{
 		m_regions.reserve(m_num_bins);
 		const int32_t num_digits = std::to_string(L).length();
@@ -467,22 +416,24 @@ struct partioned_genome
 
 	void add_reads(const std::vector<read_entry>& reads, std::default_random_engine& generator) noexcept
 	{
-		//uint64_t num_unique_assignments = 0;
-		//uint64_t num_multiple_assignments = 0;
-		//uint64_t num_no_assignments = 0;
+#ifndef NDEBUG
+		uint64_t num_unique_assignments = 0;
+		uint64_t num_multiple_assignments = 0;
+		uint64_t num_no_assignments = 0;
+#endif
 		const int32_t max_index = m_regions.size() - 1;
 
 		for (const auto& read : reads)
 		{
-			if (read.m_sam_record.m_mapped_length < m_min_mapped_length)
+			if (read.m_cooptimal_alignments.front().m_mapped_bases < m_min_required_mapped_bases)
 			{
 				// at least 80% of the profile length needs to be in mapped
 				// bases in the read to be considered for the MSA.
 				continue;
 			}
 
-			const auto start = read.m_sam_record.POS - read.m_sam_record.m_left_clip_length;
-			const auto end = read.m_sam_record.POS + read.m_sam_record.m_segment_length + read.m_sam_record.m_right_clip_length;
+			const auto start = read.m_cooptimal_alignments.front().m_POS - read.m_cooptimal_alignments.front().m_left_clip_length;
+			const auto end = read.m_cooptimal_alignments.front().m_POS + read.m_cooptimal_alignments.front().m_segment_length + read.m_cooptimal_alignments.front().m_right_clip_length;
 
 			std::vector<int32_t> candidate_regions;
 			for (int32_t i = std::min<int32_t>(start / m_offset, max_index); i >= 0; --i)
@@ -503,25 +454,29 @@ struct partioned_genome
 				int32_t rand_assignment = std::uniform_int_distribution<int32_t>(0, candidate_regions.size() - 1)(generator);
 				m_regions[candidate_regions[rand_assignment]].m_reads.push_back(&read);
 
-				//if (candidate_regions.size() == 1)
-				//{
-				//	++num_unique_assignments;
-				//}
-				//else
-				//{
-				//	++num_multiple_assignments;
-				//}
+#ifndef NDEBUG
+				if (candidate_regions.size() == 1)
+				{
+					++num_unique_assignments;
+				}
+				else
+				{
+					++num_multiple_assignments;
+				}
 			}
-			//else
-			//{
-			//	++num_no_assignments;
-			//}
+			else
+			{
+				++num_no_assignments;
+#endif
+			}
 		}
 
-		//std::cout
-		//	<< "Unique:   " << num_unique_assignments << '\n'
-		//	<< "Multiple: " << num_multiple_assignments << '\n'
-		//	<< "None:     " << num_no_assignments << '\n';
+#ifndef NDEBUG
+		std::cerr
+			<< "Unique:   " << num_unique_assignments << std::endl
+			<< "Multiple: " << num_multiple_assignments << std::endl
+			<< "None:     " << num_no_assignments << std::endl;
+#endif
 	}
 
 	void shuffle_reads(const int32_t max_reads_to_sample, std::default_random_engine& generator) noexcept
@@ -552,7 +507,7 @@ struct partioned_genome
 			for (int32_t j = 0; j < max_num_reads; ++j)
 			{
 				output << '>' << i.m_reads[j]->m_fastq_record.m_id << '\n';
-				i.m_reads[j]->print_sequence(output, true);
+				i.m_reads[j]->print_sequence_qual(output, true, i.m_reads[j]->m_fastq_record.m_seq);
 				output << '\n';
 			}
 			output << ">REF\n"
@@ -563,7 +518,7 @@ struct partioned_genome
 
 	void run_mafft_on_files(const std::string& mafft, const int32_t num_threads) const noexcept
 	{
-		std::cout << "Running MAFFT on region\n";
+		std::cout << "Running MAFFT on region" << std::endl;
 		for (const auto& i : m_regions)
 		{
 			std::ostringstream mafft_cmd_line;
@@ -574,12 +529,12 @@ struct partioned_genome
 				<< i.m_files_dir << "/reads.fasta > "
 				<< i.m_files_dir << "/reads_aln.fasta";
 
-			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << '\n';
+			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << std::endl;
 			int result = std::system(mafft_cmd_line.str().c_str());
 
 			if (result != 0)
 			{
-				std::cerr << "ERROR: MAFFT exited with error code " << result << '\n';
+				std::cerr << "ERROR: MAFFT exited with error code " << result << std::endl;
 				exit(EXIT_FAILURE);
 			}
 		}
@@ -603,11 +558,11 @@ struct partioned_genome
 
 		//uint64_t r = 0;
 
-		std::cout << "Processing MAFFT aligned files\n"
+		std::cout << "Processing MAFFT aligned files" << std::endl
 				  << std::fixed;
 		for (const auto& i : m_regions)
 		{
-			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << '\n';
+			std::cout << std::right << std::setw(8) << i.m_start << " -> " << std::setw(6) << i.m_end << std::endl;
 
 			// 0. load aligned MSA
 			std::vector<reference_haplotype> msa_reads(fasta_read<reference_haplotype>(i.m_files_dir + "/reads_aln.fasta"));
@@ -625,14 +580,14 @@ struct partioned_genome
 
 			if (ref_seq.name != "REF")
 			{
-				std::cerr << "ERROR: Last sequence in " << i.m_files_dir << "/reads_aln.fasta is not the reference!\n";
+				std::cerr << "ERROR: Last sequence in " << i.m_files_dir << "/reads_aln.fasta is not the reference!" << std::endl;
 				exit(EXIT_FAILURE);
 			}
 
 			// 1. collect statistics
 			const int32_t total_length_of_MSA = ref_seq.sequence.length();
 			std::vector<uint32_t> coverage(total_length_of_MSA, 0);
-			std::vector<uint32_t> nongap_coverage(total_length_of_MSA, 0);
+			std::vector<uint32_t> nongap_histogram(total_length_of_MSA, 0);
 			std::vector<dna_array<double, 5>> base_dist(total_length_of_MSA, { 0.0, 0.0, 0.0, 0.0, 0.0 });
 
 			for (int32_t j = 0; j < total_length_of_MSA; ++j)
@@ -646,7 +601,7 @@ struct partioned_genome
 						if (base != '-')
 						{
 							// base
-							++nongap_coverage[j];
+							++nongap_histogram[j];
 							++base_dist[j][base];
 						}
 					}
@@ -658,7 +613,7 @@ struct partioned_genome
 			is_locus_cov_high.reserve(total_length_of_MSA);
 			for (int32_t j = 0; j < total_length_of_MSA; ++j)
 			{
-				is_locus_cov_high.push_back((static_cast<double>(nongap_coverage[j]) / coverage[j]) > 0.5);
+				is_locus_cov_high.push_back((static_cast<double>(nongap_histogram[j]) / coverage[j]) > 0.5);
 			}
 
 			// 3. find start of region with respect to reference
@@ -716,7 +671,7 @@ struct partioned_genome
 				// a locus in the alignment is 'valid', we therefore require at least
 				// 3 reads supporting the locus AND a minimum fraction of 'min_base_cov',
 				// and if we have less than 3 reads, all of them must support the position.
-				if ((static_cast<double>(nongap_coverage[j]) / coverage[j]) >= std::min<double>(std::max<double>(2.5 / coverage[j], min_base_cov), 1.0))
+				if ((static_cast<double>(nongap_histogram[j]) / coverage[j]) >= std::min<double>(std::max<double>(2.5 / coverage[j], min_base_cov), 1.0))
 				{
 					valid_loci.push_back(j);
 				}
@@ -804,8 +759,8 @@ void single_end_aligner<T>::estimate_parameters(
 	const std::string tmpdir_root(tmp_root_constr.str());
 
 	// 1. perform rough alignment first
-	std::cout << ++m_phase << ") Performing first rough alignment\n";
-	alignment_impl(m_reads, m_parameters, clip_mode::soft, seed, false, verbose, false);
+	std::cout << ++m_phase << ") Performing first rough alignment" << std::endl;
+	perform_alignment(false, verbose);
 
 	// 2. chop up genome and extract reads
 	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
@@ -832,8 +787,6 @@ void single_end_aligner<T>::estimate_parameters(
 		M_D_p,
 		D_D_p);
 
-	m_parameters.m_reference_genome_name.clear();
-	serialize = true;
 	m_parameters.set_parameters(std::move(E_p), std::move(M_D_p), std::move(D_D_p), error_rates, ambig_bases_unequal_weight);
 
 	// 7. (optional) cleanup temporary MAFFT files
@@ -843,22 +796,13 @@ void single_end_aligner<T>::estimate_parameters(
 	}
 }
 
-// 6. perform alignment
-template <typename T>
-std::size_t single_end_aligner<T>::number_of_reads() const noexcept
-{
-	return m_reads.size();
-}
-
+// 5. perform alignment
 template <typename T, typename std::enable_if<std::is_floating_point<T>::value, int>::type = 0>
 void alignment_impl(
 	std::vector<read_entry>& reads,
 	const reference_genome<T>& parameters,
-	const clip_mode clip,
-	const uint64_t seed,
 	const bool exhaustive,
-	const bool verbose,
-	const bool differentiate_match_state) noexcept
+	const bool verbose) noexcept
 {
 	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 }
@@ -880,17 +824,18 @@ void display_progress(
 	} while (now < total);
 }
 
-template <typename T, typename std::enable_if<std::is_integral<T>::value, int>::type = 0>
-void alignment_impl(
-	std::vector<read_entry>& reads,
-	const reference_genome<T>& parameters,
-	const clip_mode clip,
-	const uint64_t seed,
+template <typename T>
+void single_end_aligner<T>::perform_alignment(
 	const bool exhaustive,
-	const bool verbose,
-	const bool differentiate_match_state) noexcept
+	const bool verbose) noexcept
 {
-	const auto end = reads.cend();
+	std::cout << ++m_phase << ") Performing alignment" << std::endl;
+	std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
+
+	// actual alignment
+	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
+
+	const auto end_it = m_reads.cend();
 	unsigned long progress = 0;
 
 	// minimum number of matched k-mers of a read to be considered the correct strand
@@ -906,42 +851,32 @@ void alignment_impl(
 		uint64_t num_indexed_alignments = 0;
 		uint64_t num_sacrificial_alignments = 0;
 	} alignment_stats;
-	std::cout << '\n';
+	std::cerr << std::endl;
 #endif
 
 	std::function<void()> display_func;
+#ifdef NDEBUG
 	if (verbose)
 	{
-#ifdef NDEBUG
-		display_func = std::bind(display_progress, std::cref(progress), reads.size());
+		display_func = std::bind(display_progress, std::cref(progress), m_reads.size());
 	}
 	else
-	{
 #endif
+	{
 		display_func = []() {
 		};
 	}
 	std::thread display_thread(display_func);
 
-	std::random_device rd;
-#pragma omp parallel shared(reads, progress)
+#pragma omp parallel shared(m_reads, progress)
 	{
-		std::default_random_engine rng;
-#pragma omp critical
-		{
-			uint64_t thread_seed = (seed ? seed : std::uniform_int_distribution<uint64_t>()(rd));
-#ifndef NDEBUG
-			int tid = omp_get_thread_num();
-			std::cout << "Seeding Thread #" << tid << " with seed " << thread_seed << '\n';
-#endif
-			rng.seed(thread_seed);
-		}
+		std::vector<minimal_alignment> forward_alns, reverse_alns;
+		T forward_score, reverse_score;
 
-		sam_entry forward_sam, reverse_sam;
 		std::string rev_seq;
 
-#pragma omp for schedule(runtime)
-		for (auto it = reads.begin(); it < end; ++it)
+#pragma omp for schedule(dynamic, 200)
+		for (auto it = m_reads.begin(); it < end_it; ++it)
 		{
 			read_entry& read_entry_ref = *it;
 			const boost::string_ref seq = read_entry_ref.m_fastq_record.m_seq;
@@ -954,16 +889,16 @@ void alignment_impl(
 
 			// 1. first use heuristics to determine strand
 			bool align_forward = false;
-			forward_sam.SCORE = std::numeric_limits<decltype(forward_sam.SCORE)>::min();
-			auto forward_stats = parameters.find_pos(seq);
+			forward_score = std::numeric_limits<decltype(forward_score)>::min();
+			auto forward_stats = m_parameters.find_pos(seq);
 
 			bool align_reverse = false;
-			reverse_sam.SCORE = std::numeric_limits<decltype(reverse_sam.SCORE)>::min();
+			reverse_score = std::numeric_limits<decltype(reverse_score)>::min();
 
 			rev_seq.resize(seq.size());
 			std::transform(seq.crbegin(), seq.crend(), rev_seq.begin(), rev_comp_char);
 
-			auto reverse_stats = parameters.find_pos(rev_seq);
+			auto reverse_stats = m_parameters.find_pos(rev_seq);
 
 			bool exhaustive_alignment = exhaustive;
 
@@ -994,10 +929,10 @@ void alignment_impl(
 #ifndef NDEBUG
 				&alignment_stats,
 #endif
-				&parameters,
-				&rng](sam_entry& sam_alignment, const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, bool differentiate_match_state) {
+				this](const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, std::vector<minimal_alignment>& alignments) -> T {
 				int32_t POS;
 				int32_t end_POS;
+				T score;
 
 				exhaustive |= (heuristics.num_samples <= min_hash_pos_better);
 				exhaustive |= (heuristics.sd > 1000);
@@ -1005,7 +940,7 @@ void alignment_impl(
 				if (exhaustive)
 				{
 					POS = 0;
-					end_POS = parameters.m_L;
+					end_POS = m_parameters.m_L;
 #ifndef NDEBUG
 					++alignment_stats.num_exhaustive_alignments;
 #endif
@@ -1020,122 +955,94 @@ void alignment_impl(
 					POS = std::max<int32_t>(0, POS);
 
 					end_POS = heuristics.POS + query.length() + buffer;
-					end_POS = std::min<int32_t>(end_POS, parameters.m_L);
+					end_POS = std::min<int32_t>(end_POS, m_parameters.m_L);
 
-// // test for detection of failed heuristic
-// POS = heuristics.POS + 100;
-// POS = std::max<int32_t>(0, POS);
-//
-// end_POS = heuristics.POS + query.length() - 100;
-// end_POS = std::min<int32_t>(end_POS, parameters.m_L);
 #ifndef NDEBUG
+					// // test for detection of failed heuristic
+					// POS = heuristics.POS + 100;
+					// POS = std::max<int32_t>(0, POS);
+					//
+					// end_POS = heuristics.POS + query.length() - 100;
+					// end_POS = std::min<int32_t>(end_POS, m_parameters.m_L);
 					++alignment_stats.num_indexed_alignments;
 #endif
 				}
 
-				sam_alignment = hmmalign<T>::viterbi(parameters, query, rng, POS, end_POS, differentiate_match_state);
+				alignments.clear();
+				score = hmmalign<T>::viterbi(m_parameters, query, POS, end_POS, alignments);
 
-#ifndef NDEBUG
-				{
-					std::cout
-						<< "POS:" << std::right
-						<< std::setw(6) << POS
-						<< std::setw(6) << "End:"
-						<< std::setw(6) << end_POS
-						<< std::setw(14) << "True POS:"
-						<< std::setw(6) << sam_alignment.POS
-						<< std::setw(14) << "True End:"
-						<< std::setw(6) << sam_alignment.POS + sam_alignment.m_segment_length << '\n';
-				}
-#endif
+				DEBUG_TRACE(std::cerr
+					<< "POS:" << std::right
+					<< std::setw(6) << POS
+					<< std::setw(6) << "End:"
+					<< std::setw(6) << end_POS
+					<< std::setw(14) << "True POS:"
+					<< std::setw(6) << alignments.front().m_POS
+					<< std::setw(14) << "True End:"
+					<< std::setw(6) << alignments.front().m_POS + alignments.front().m_segment_length << std::endl);
 
-				if ((((sam_alignment.POS - sam_alignment.m_left_clip_length < POS) && (POS != 0)) || ((sam_alignment.POS + sam_alignment.m_segment_length + sam_alignment.m_right_clip_length > end_POS) && (end_POS != static_cast<int32_t>(parameters.m_L))))
+				if ((((alignments.front().m_POS - alignments.front().m_left_clip_length < POS) && (POS != 0)) || ((alignments.front().m_POS + alignments.front().m_segment_length + alignments.front().m_right_clip_length > end_POS) && (end_POS != static_cast<int32_t>(m_parameters.m_L))))
 					&& (exhaustive == false))
 				{
 					// window size probably too small, perform sacrificial full-length alignment
-					sam_alignment = hmmalign<T>::viterbi(parameters, query, rng, 0, parameters.m_L, differentiate_match_state);
+					alignments.clear();
+					score = hmmalign<T>::viterbi(m_parameters, query, 0, m_parameters.m_L, alignments);
+
 #ifndef NDEBUG
-					{
-						++alignment_stats.num_sacrificial_alignments;
-						std::cout << "Had to perform sacrificial exhaustive alignment\n";
-					}
+					++alignment_stats.num_sacrificial_alignments;
+					std::cerr << "Had to perform sacrificial exhaustive alignment" << std::endl;
 #endif
 				}
+
+				return score;
 			};
 
 			if (align_forward)
 			{
-				per_strand_alignment(forward_sam, seq, exhaustive_alignment, forward_stats, differentiate_match_state);
+				forward_score = per_strand_alignment(seq, exhaustive_alignment, forward_stats, forward_alns);
 			}
 
 			if (align_reverse)
 			{
-				per_strand_alignment(reverse_sam, rev_seq, exhaustive_alignment, reverse_stats, differentiate_match_state);
+				reverse_score = per_strand_alignment(rev_seq, exhaustive_alignment, reverse_stats, reverse_alns);
 			}
 
 			// 3. pick correct alignment
-			if (reverse_sam.SCORE > forward_sam.SCORE)
+			if (reverse_score > forward_score)
 			{
 				// reverse complementary is better
-				read_entry_ref.m_sam_record.m_forward = false;
+				read_entry_ref.SCORE = reverse_score;
+				read_entry_ref.m_reverse_compl = true;
 
-				read_entry_ref.m_sam_record = std::move(reverse_sam);
-				read_entry_ref.m_sam_record.FLAG |= 0x10;
-				read_entry_ref.m_sam_record.m_forward = false;
+				read_entry_ref.m_cooptimal_alignments = std::move(reverse_alns);
+
+				read_entry_ref.m_fastq_record.m_seq = std::move(rev_seq);
+				std::reverse(read_entry_ref.m_fastq_record.m_qual.begin(), read_entry_ref.m_fastq_record.m_qual.end());
 			}
 			else
 			{
 				// forward is better
-				read_entry_ref.m_sam_record.m_forward = true;
+				read_entry_ref.SCORE = forward_score;
+				read_entry_ref.m_reverse_compl = false;
 
-				read_entry_ref.m_sam_record = std::move(forward_sam);
+				read_entry_ref.m_cooptimal_alignments = std::move(forward_alns);
 			}
-			read_entry_ref.m_sam_record.m_clip = clip;
 		}
 	}
 
 #ifndef NDEBUG
-	std::cout
-		<< "Number of exhaustive alignments:  " << alignment_stats.num_exhaustive_alignments << '\n'
-		<< "Number of indexed alignments:     " << alignment_stats.num_indexed_alignments << '\n'
-		<< "Number of sacrificial alignments: " << alignment_stats.num_sacrificial_alignments << '\n';
+	std::cerr
+		<< "Number of exhaustive alignments:  " << alignment_stats.num_exhaustive_alignments << std::endl
+		<< "Number of indexed alignments:     " << alignment_stats.num_indexed_alignments << std::endl
+		<< "Number of sacrificial alignments: " << alignment_stats.num_sacrificial_alignments << std::endl;
 #endif
 
 	display_thread.join();
-}
+	std::cout << std::endl;
 
-template <typename T>
-void single_end_aligner<T>::perform_alignment(
-	const std::string& reference_genome_name,
-	const clip_mode clip,
-	const uint64_t seed,
-	const bool exhaustive,
-	const bool verbose,
-	const bool differentiate_match_state) noexcept
-{
-	std::cout << ++m_phase << ") Performing alignment (" << (clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping)\n";
-	if (m_parameters.m_reference_genome_name.empty())
-	{
-		m_parameters.m_reference_genome_name = reference_genome_name;
-	}
-	if (seed)
-	{
-		std::cout << "   Using provided seed " << seed << " for deterministic alignment\n";
-	}
-	if (differentiate_match_state)
-	{
-		std::cout << "   CIGAR 'M' will be replaced by '='/'X'\n";
-	}
-	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-
-	// actual alignment
-	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
-	alignment_impl(m_reads, m_parameters, clip, seed, exhaustive, verbose, differentiate_match_state);
-	std::cout << '\n';
-
-	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() / 1E9;
-	const double performance = number_of_reads() / duration;
+	std::chrono::steady_clock::time_point time_end = std::chrono::steady_clock::now();
+	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time_end - time_start).count() / 1E9;
+	const double performance = m_reads.size() / duration;
 
 	std::cout
 		<< "   Alignment took "
@@ -1143,46 +1050,394 @@ void single_end_aligner<T>::perform_alignment(
 		<< (static_cast<uint32_t>(duration) / 60) % 60 << "min "
 		<< static_cast<uint32_t>(duration) % 60 << "s ("
 		<< std::fixed << std::setprecision(1)
-		<< performance / num_threads << " reads/thread/s, " << performance << " reads/s).\n";
+		<< performance / num_threads << " reads/thread/s, " << performance << " reads/s)." << std::endl;
 }
 
-// 7. write alignment to output
+// 6. post-alignment processing
 template <typename T>
-void single_end_aligner<T>::write_alignment_to_file(
-	const std::string& data_root,
-	const std::string& output_file_name,
-	const std::string& rejects_file_name) noexcept
+void single_end_aligner<T>::post_alignment_processing(const bool differentiate_match_state, const uint64_t seed, const double min_freq, const double error_rate, bool ambig_bases_unequal_weight) noexcept
 {
-	std::cout << ++m_phase << ") Writing ";
-	write_alignment_to_file_impl(output_file_name, rejects_file_name);
-	std::cout << '\n';
+	std::cout << ++m_phase << ") Performing post-alignment processing" << std::endl;
 
-	if (serialize)
+	// a. check whether all co-optimal alignments have at least m_min_required_mapped_bases bases
+	std::cout << "   Checking for reads with too few mapped bases" << std::endl;
+
+	int32_t min_mapped_bases;
+	for (auto& i : m_reads)
 	{
-		// provided an MSA
-		std::cout << "   Writing new reference sequences\n";
+		i.m_invalid = false;
+		min_mapped_bases = std::numeric_limits<decltype(min_mapped_bases)>::max();
 
-		std::ofstream output;
-		output.open(data_root + "ref_majority.fasta");
-		output << '>' << m_parameters.m_reference_genome_name << '\n'
-			   << m_parameters.m_majority_ref << '\n';
-		output.close();
+		// determine minimum mapped bases for all co-optimal alignments
+		for (const auto& j : i.m_cooptimal_alignments)
+		{
+			min_mapped_bases = std::min<decltype(min_mapped_bases)>(min_mapped_bases, j.m_mapped_bases);
 
-		output.open(data_root + "ref_ambig.fasta");
-		output << '>' << m_parameters.m_reference_genome_name << '\n'
-			   << m_parameters.m_ambig_ref << '\n';
-		output.close();
+			if (min_mapped_bases < m_min_required_mapped_bases)
+			{
+				// at least one alignment has less than m_min_required_mapped_bases mapped bases
+				i.m_invalid = true;
+				break;
+			}
+		}
+	}
 
-		std::string output_hmm_filename = m_parameters.m_reference_genome_name;
-		boost::algorithm::to_lower(output_hmm_filename);
-		output_hmm_filename.append(".hmm");
+	// b. distribute gaps (and write SAM entries)
+	std::cout << "   Distributing gaps among co-optimal alignments" << std::endl;
 
-		output.open(data_root + output_hmm_filename);
-		m_parameters.save_to_file(output);
-		output.close();
+	std::vector<std::size_t> gap_histogram(m_parameters.m_L, 0);
+	for (auto& i : m_reads)
+	{
+		int32_t pos_on_genome;
+		std::size_t cur_gap_aln_score, best_gap_aln = 0;
+		std::size_t best_gap_aln_score = std::numeric_limits<decltype(best_gap_aln_score)>::max();
+
+		// 1. determine best alignment with respect to gaps
+		for (std::size_t j = 0; j < i.m_cooptimal_alignments.size(); ++j)
+		{
+			cur_gap_aln_score = 0;
+			pos_on_genome = i.m_cooptimal_alignments[j].m_POS;
+
+			for (const auto& k : i.m_cooptimal_alignments[j].m_CIGAR)
+			{
+				switch (k.first)
+				{
+					case 'D':
+						for (std::size_t l = 0; l < k.second; ++l)
+						{
+							cur_gap_aln_score += (gap_histogram[pos_on_genome + l]);
+						}
+					case 'M':
+						pos_on_genome += k.second;
+
+					default:
+						break;
+				}
+			}
+
+			if (cur_gap_aln_score < best_gap_aln_score)
+			{
+				best_gap_aln = j;
+				best_gap_aln_score = cur_gap_aln_score;
+			}
+		}
+
+		// 2. choose best alignment
+		i.set_opt_aln(best_gap_aln);
+
+		// 3. increment gap histogram
+		if (i.m_invalid == false)
+		{
+			pos_on_genome = i.get_opt_aln().m_POS;
+			for (const auto& k : i.get_opt_aln().m_CIGAR)
+			{
+				switch (k.first)
+				{
+					case 'D':
+						for (std::size_t l = 0; l < k.second; ++l)
+						{
+							gap_histogram[pos_on_genome + l]++;
+						}
+					case 'M':
+						pos_on_genome += k.second;
+
+					default:
+						break;
+				}
+			}
+		}
+	}
+
+	// c. call final consensus sequence
+	std::cout << "   Calling final consensus sequences" << std::endl;
+
+	std::vector<dna_array<double, 5>> base_coverage(m_parameters.m_L, { 0.0, 0.0, 0.0, 0.0, 0.0 });
+	for (auto& i : m_reads)
+	{
+		if (i.m_invalid == false)
+		{
+			int32_t pos_on_genome = i.get_opt_aln().m_POS;
+			int32_t pos_in_read = i.get_opt_aln().m_left_clip_length;
+
+			for (const auto& k : i.get_opt_aln().m_CIGAR)
+			{
+				switch (k.first)
+				{
+					case 'M':
+						for (std::size_t l = 0; l < k.second; ++l)
+						{
+							const char base = i.m_fastq_record.m_seq[pos_in_read + l];
+
+							if (base != 'N')
+							{
+								base_coverage[pos_on_genome + l][base]++;
+							}
+						}
+						pos_in_read += k.second;
+					case 'D':
+						pos_on_genome += k.second;
+						break;
+
+					case 'I':
+						pos_in_read += k.second;
+
+					default:
+						break;
+				}
+			}
+		}
+	}
+	m_parameters.init_emission_table(std::move(base_coverage), min_freq, error_rate, ambig_bases_unequal_weight, true);
+
+	// d. calculate edit distance and (optionally) rewrite CIGAR
+	std::cout << "   Calculating edit distances";
+	// replace 'M' in CIGAR if differentiate_match_state == true
+	// Match: '=' Mismatch: 'X'
+	if (differentiate_match_state)
+	{
+		std::cout << " (CIGAR 'M' will be replaced by '='/'X')";
+	}
+	std::cout << std::endl;
+
+	// calculate edit/Hamming distance
+	auto calculate_edit_distance = [](const reference_genome<T>& parameters, const boost::string_ref& seq, const bool rewrite_cigar, minimal_alignment& aln) -> std::tuple<uint32_t, std::string> {
+		uint32_t edit_distance = 0;
+		std::ostringstream MD_tag;
+
+		uint32_t pos_in_read = aln.m_left_clip_length;
+		uint32_t pos_on_genome = aln.m_POS;
+
+		CIGAR_vec new_CIGAR_vec;
+
+		char old_state, cur_state;
+		uint32_t cur_length;
+
+		uint32_t MD_length = 0;
+
+		for (const auto& op : aln.m_CIGAR)
+		{
+			switch (op.first)
+			{
+				case 'M':
+					if (rewrite_cigar)
+					{
+						old_state = (parameters.m_table_of_included_bases[pos_on_genome][seq[pos_in_read]] ? '=' : 'X');
+						cur_length = 0;
+					}
+
+					for (uint32_t j = pos_in_read, i = pos_on_genome; j < pos_in_read + op.second; ++i, ++j)
+					{
+						cur_state = (parameters.m_table_of_included_bases[i][seq[j]] ? '=' : 'X');
+						edit_distance += (cur_state == 'X');
+
+						if (cur_state == 'X')
+						{
+							MD_tag << MD_length << parameters.m_ambig_ref[i];
+							MD_length = 0;
+						}
+						else
+						{
+							++MD_length;
+						}
+
+						if (rewrite_cigar)
+						{
+							if (cur_state != old_state)
+							{
+								// switch states
+								new_CIGAR_vec.emplace_back(old_state, cur_length);
+								old_state = cur_state;
+								cur_length = 0;
+							}
+
+							++cur_length;
+						}
+					}
+
+					if (rewrite_cigar)
+					{
+						new_CIGAR_vec.emplace_back(cur_state, cur_length);
+					}
+
+					pos_on_genome += op.second;
+					pos_in_read += op.second;
+					break;
+
+				case 'I':
+					if (rewrite_cigar)
+					{
+						new_CIGAR_vec.push_back(op);
+					}
+
+					edit_distance += op.second;
+					pos_in_read += op.second;
+					break;
+
+				case 'D':
+					if (rewrite_cigar)
+					{
+						new_CIGAR_vec.push_back(op);
+					}
+
+					MD_tag << MD_length << '^' << parameters.m_ambig_ref.substr(pos_on_genome, op.second);
+					MD_length = 0;
+
+					edit_distance += op.second;
+					pos_on_genome += op.second;
+					break;
+			}
+		}
+
+		if (rewrite_cigar)
+		{
+			aln.m_CIGAR.swap(new_CIGAR_vec);
+		}
+		MD_tag << MD_length;
+
+		return { edit_distance, MD_tag.str() };
+	};
+
+	for (auto& i : m_reads)
+	{
+		std::tie(i.NM, i.MD_tag) = calculate_edit_distance(m_parameters, i.m_fastq_record.m_seq, differentiate_match_state, i.get_opt_aln());
+	}
+
+	// e. sorting reads
+	std::cout << "   Sorting reads" << std::endl;
+	auto comp_read_entry_by_queryname = [](
+		const read_entry& lhs,
+		const read_entry& rhs) noexcept
+	{
+		return std::tie(lhs.m_fastq_record.m_id, lhs.get_opt_aln().m_POS, lhs.m_reverse_compl) < std::tie(rhs.m_fastq_record.m_id, rhs.get_opt_aln().m_POS, rhs.m_reverse_compl);
+	};
+	std::sort(m_reads.begin(), m_reads.end(), comp_read_entry_by_queryname);
+
+	// f. check pairs
+	std::cout << "   Setting SAM properties" << std::endl;
+	m_good_reads.clear();
+	m_bad_reads.clear();
+	flag_reads();
+
+	std::cout << std::endl
+			  << "\tValid:                   " << m_good_reads.size() << " (" << std::fixed << std::setprecision(1) << static_cast<double>(m_good_reads.size()) * 100 / m_reads.size() << "%)" << std::endl
+			  << "\tInvalid:                 " << m_bad_reads.size() << std::endl
+			  << std::endl;
+}
+
+template <typename T>
+void single_end_aligner<T>::flag_reads() noexcept
+{
+	for (auto& i : m_reads)
+	{
+		if (i.m_invalid == true)
+		{
+			m_bad_reads.push_back(&i);
+		}
+		else
+		{
+			m_good_reads.push_back(&i);
+		}
 	}
 }
 
+template <typename T>
+void paired_end_aligner<T>::flag_reads() noexcept
+{
+	auto it = m_reads.begin();
+	auto it_end = m_reads.end() - 1;
+
+	std::cout << "   Performing first pass" << std::endl;
+	boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
+
+	while (it < it_end)
+	{
+		read_entry& first_read = *it;
+		read_entry& second_read = *(it + 1);
+
+		if (first_read.m_fastq_record.m_id == second_read.m_fastq_record.m_id)
+		{
+			// have paired reads
+			first_read.m_paired_read = true;
+			second_read.m_paired_read = true;
+
+			first_read.m_mate_reverse_compl = second_read.m_reverse_compl;
+			second_read.m_mate_reverse_compl = first_read.m_reverse_compl;
+
+			const int32_t TLEN = std::max<decltype(TLEN)>(first_read.get_opt_aln().m_POS + first_read.get_opt_aln().m_segment_length, second_read.get_opt_aln().m_POS + second_read.get_opt_aln().m_segment_length)
+				- std::min<decltype(TLEN)>(first_read.get_opt_aln().m_POS, second_read.get_opt_aln().m_POS);
+
+			first_read.TLEN = TLEN;
+			second_read.TLEN = -TLEN;
+
+			first_read.RNEXT = '=';
+			second_read.RNEXT = '=';
+
+			first_read.PNEXT = second_read.get_opt_aln().m_POS;
+			second_read.PNEXT = first_read.get_opt_aln().m_POS;
+
+			if (first_read.m_fastq_record.m_second_in_pair + second_read.m_fastq_record.m_second_in_pair != 1)
+			{
+				// can only have one R1 and one R2
+				first_read.m_invalid = true;
+				second_read.m_invalid = true;
+			}
+
+			if ((first_read.m_reverse_compl != false) || (second_read.m_reverse_compl != true))
+			{
+				// Need to have
+				// ---->
+				//    <----
+				// configuration of reads
+				first_read.m_invalid = true;
+				second_read.m_invalid = true;
+			}
+
+			if (first_read.m_invalid + second_read.m_invalid)
+			{
+				// at least one read has an issue
+				first_read.m_invalid = true;
+				second_read.m_invalid = true;
+			}
+			else
+			{
+				// both reads passed all checks
+				acc(TLEN);
+			}
+
+			++it;
+		}
+		else
+		{
+			// first_read does not have a mate
+			first_read.m_invalid = true;
+		}
+		++it;
+	}
+
+	std::cout << "   Performing second pass" << std::endl;
+
+	// second pass, write output
+	const int32_t MAX_TLEN = boost::accumulators::mean(acc) + 3 * std::sqrt(boost::accumulators::variance(acc));
+	std::cout << std::fixed
+			  << "     Mean[TLEN]: " << static_cast<int32_t>(boost::accumulators::mean(acc)) << std::endl
+			  << "       sd[TLEN]: " << static_cast<int32_t>(std::sqrt(boost::accumulators::variance(acc))) << std::endl
+			  << "      Max[TLEN] allowed (mean + 3*sd): " << MAX_TLEN << std::endl;
+
+	for (auto& i : m_reads)
+	{
+		if ((i.m_invalid == true) || (std::abs(i.TLEN) > MAX_TLEN))
+		{
+			m_bad_reads.push_back(&i);
+		}
+		else
+		{
+			i.m_mapped_in_proper_pair = true;
+			m_good_reads.push_back(&i);
+		}
+	}
+}
+
+// 7. write alignment to output
 void write_header(
 	std::ostream& output,
 	const std::string& genome_name,
@@ -1203,250 +1458,74 @@ void write_header(
 }
 
 template <typename T>
-void single_end_aligner<T>::write_alignment_to_file_impl(
+void single_end_aligner<T>::write_alignment_to_file(
+	const clip_mode clip,
+	const std::string& consensus_name,
+	const std::string& data_root,
 	const std::string& output_file_name,
 	const std::string& rejects_file_name) noexcept
 {
-	std::cout << "single-end alignment\n";
-	std::size_t proper_reads = 0;
-	std::size_t too_short_reads = 0;
+	std::cout << ++m_phase << ") Writing alignment (" << (read_entry::m_clip == clip_mode::soft ? "soft" : (clip == clip_mode::hard ? "hard" : "HARD")) << " clipping)" << std::endl;
 
+	read_entry::m_clip = clip;
+	read_entry::RNAME = consensus_name;
+
+	/////////////////////
+	// write SAM files //
+	/////////////////////
+
+	// write file with good alignments
 	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(rejects_file_name);
+	write_header(output_file, consensus_name, m_parameters.m_L, m_argc, m_argv);
+	for (const auto& i : m_good_reads)
+	{
+		output_file << *i << '\n';
+	}
+	output_file.close();
 
-	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
+	// write file with failed alignments
+	output_file.open(rejects_file_name, (output_file_name == rejects_file_name) ? std::ofstream::app : std::ofstream::trunc);
 	if (output_file_name != rejects_file_name)
 	{
-		write_header(rejects_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
+		write_header(output_file, consensus_name, m_parameters.m_L, m_argc, m_argv);
 	}
-
-	for (const auto& i : m_reads)
+	for (const auto& i : m_bad_reads)
 	{
-		((i.m_sam_record.m_mapped_length < m_min_mapped_length) ? (++too_short_reads, rejects_file) : (++proper_reads, output_file)) << i;
+		output_file << *i << '\n';
 	}
+	output_file.close();
 
-	std::cout
-		<< "\n\tToo short:               " << too_short_reads << '\n'
-		<< '\n'
-		<< "\tReads                    " << proper_reads << " (" << std::fixed << std::setprecision(1) << static_cast<double>(proper_reads) * 100 / m_reads.size() << "%)\n";
+	///////////////////////////////////
+	// write new consensus sequences //
+	///////////////////////////////////
+
+	std::cout << "   Writing new reference sequences" << std::endl;
+
+	// majority consensus
+	output_file.open(data_root + "ref_majority.fasta");
+	output_file << '>' << consensus_name << '\n'
+				<< m_parameters.m_majority_ref << '\n';
+	output_file.close();
+
+	// ambiguous consensus
+	output_file.open(data_root + "ref_ambig.fasta");
+	output_file << '>' << consensus_name << '\n'
+				<< m_parameters.m_ambig_ref << '\n';
+	output_file.close();
+
+	///////////////////
+	// serialise HMM //
+	///////////////////
+
+	std::string output_hmm_filename = consensus_name;
+	boost::algorithm::to_lower(output_hmm_filename);
+	output_hmm_filename.append(".hmm");
+
+	output_file.open(data_root + output_hmm_filename);
+	m_parameters.save_to_file(output_file);
+	output_file.close();
 }
 
-template <typename T>
-void paired_end_aligner<T>::write_alignment_to_file_impl(
-	const std::string& output_file_name,
-	const std::string& rejects_file_name) noexcept
-{
-	/*
-	std::cout << "paired-end alignment\n";
-
-	// first pass, set and correct flags and collect statistics
-	const auto end1 = m_reads.end();
-	const auto end2 = m_reads2.end();
-
-	auto it1 = m_reads.begin();
-	auto it2 = m_reads2.begin();
-
-	int32_t TLEN;
-	boost::accumulators::accumulator_set<double, boost::accumulators::features<boost::accumulators::tag::mean, boost::accumulators::tag::variance>> acc;
-
-	for (; (it1 != end1) && (it2 != end2);)
-	{
-		// check whether reads are properly paired
-		if (comp_read_entry_by_queryname(*it1, *it2))
-		{
-			++it1;
-		}
-		else
-		{
-			if (!(comp_read_entry_by_queryname(*it2, *it1)))
-			{
-				// swap reads depending on position and other criteria
-				if (it2->m_sam_record.POS < it1->m_sam_record.POS)
-				{
-					std::swap(*it1, *it2);
-				}
-				else
-				{
-					if (it2->m_sam_record.POS == it1->m_sam_record.POS)
-					{
-						if ((it2->m_sam_record.m_forward == true) && (it1->m_sam_record.m_forward == false))
-						{
-							std::swap(*it1, *it2);
-						}
-					}
-				}
-
-				it1->m_sam_record.FLAG |= 0x3;
-				it2->m_sam_record.FLAG |= 0x3;
-
-				it1->m_sam_record.FLAG |= 0x40;
-				it2->m_sam_record.FLAG |= 0x80;
-
-				if (it1->m_sam_record.m_forward == false)
-				{
-					it2->m_sam_record.FLAG |= 0x20;
-				}
-				if (it2->m_sam_record.m_forward == false)
-				{
-					it1->m_sam_record.FLAG |= 0x20;
-				}
-
-				it1->m_sam_record.RNEXT = '=';
-				it2->m_sam_record.RNEXT = '=';
-
-				it1->m_sam_record.PNEXT = it2->m_sam_record.POS;
-				it2->m_sam_record.PNEXT = it1->m_sam_record.POS;
-
-				TLEN = (it2->m_sam_record.POS + it2->m_sam_record.m_segment_length) - (it1->m_sam_record.POS);
-				it1->m_sam_record.TLEN = TLEN;
-				it2->m_sam_record.TLEN = -TLEN;
-
-				acc(TLEN);
-				++it1;
-			}
-
-			++it2;
-		}
-	}
-
-	// second pass, write output
-	const int32_t MAX_TLEN = boost::accumulators::mean(acc) + 3 * std::sqrt(boost::accumulators::variance(acc));
-	std::cout << std::fixed
-			  << "     Mean[TLEN]: " << static_cast<int32_t>(boost::accumulators::mean(acc))
-			  << "\n       sd[TLEN]: " << static_cast<int32_t>(std::sqrt(boost::accumulators::variance(acc)))
-			  << "\n      Max[TLEN] allowed (mean + 3*sd): " << MAX_TLEN << '\n';
-
-	std::size_t unpaired_reads = 0;
-	std::size_t too_short_reads = 0;
-	std::size_t TLEN_too_big = 0;
-
-	std::size_t num_for_for = 0;
-	std::size_t num_rev_for = 0;
-	std::size_t num_for_rev = 0;
-	std::size_t num_rev_rev = 0;
-
-	std::ofstream output_file(output_file_name);
-	std::ofstream rejects_file(rejects_file_name);
-	std::ofstream& unpaired_file = (m_write_unpaired ? output_file : rejects_file);
-
-	write_header(output_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
-	if (output_file_name != rejects_file_name)
-	{
-		write_header(rejects_file, m_parameters.m_reference_genome_name, m_parameters.m_L, m_argc, m_argv);
-	}
-
-	it1 = m_reads.begin();
-	it2 = m_reads2.begin();
-
-	for (; (it1 != end1) && (it2 != end2);)
-	{
-		// check whether reads are too short
-		if (it1->m_sam_record.m_mapped_length < m_min_mapped_length)
-		{
-			++too_short_reads;
-			rejects_file << *it1;
-			++it1;
-			continue;
-		}
-		if (it2->m_sam_record.m_mapped_length < m_min_mapped_length)
-		{
-			++too_short_reads;
-			rejects_file << *it2;
-			++it2;
-			continue;
-		}
-
-		// check whether reads are properly paired
-		if (comp_read_entry_by_queryname(*it1, *it2))
-		{
-			++unpaired_reads;
-			unpaired_file << *it1;
-			++it1;
-		}
-		else
-		{
-			if (!(comp_read_entry_by_queryname(*it2, *it1)))
-			{
-				if (it1->m_sam_record.TLEN < MAX_TLEN)
-				{
-					switch (it1->m_sam_record.FLAG)
-					{
-						case 67: // + 131
-							// ---> ... --->
-							assert(it2->m_sam_record.FLAG == 131);
-							num_for_for += 2;
-							rejects_file << *it1;
-							rejects_file << *it2;
-							break;
-
-						case 83: // + 163
-							// <--- ... --->
-							assert(it2->m_sam_record.FLAG == 163);
-							num_rev_for += 2;
-							rejects_file << *it1;
-							rejects_file << *it2;
-							break;
-
-						case 99: // + 147
-							// ---> ... <---
-							assert(it2->m_sam_record.FLAG == 147);
-							num_for_rev += 2;
-							output_file << *it1;
-							output_file << *it2;
-							break;
-
-						case 115: // + 179
-							// <--- ... <---
-							assert(it2->m_sam_record.FLAG == 179);
-							num_rev_rev += 2;
-							rejects_file << *it1;
-							rejects_file << *it2;
-							break;
-
-						default:
-							std::cerr << it1->m_sam_record.FLAG << " is an unrecognised flag in paired-end alignments\n";
-							exit(EXIT_FAILURE);
-					}
-				}
-				else
-				{
-					TLEN_too_big += 2;
-					rejects_file << *it1;
-					rejects_file << *it2;
-				}
-
-				++it1;
-			}
-			else
-			{
-				++unpaired_reads;
-				unpaired_file << *it2;
-			}
-
-			++it2;
-		}
-	}
-
-	for (; it1 != end1; ++it1)
-	{
-		(it1->m_sam_record.m_mapped_length < m_min_mapped_length ? (++too_short_reads, rejects_file) : (++unpaired_reads, unpaired_file)) << *it1;
-	}
-	for (; it2 != end2; ++it2)
-	{
-		(it2->m_sam_record.m_mapped_length < m_min_mapped_length ? (++too_short_reads, rejects_file) : (++unpaired_reads, unpaired_file)) << *it2;
-	}
-
-	std::cout
-		<< "\n\tToo short:               " << too_short_reads << '\n'
-		<< "\t" << (m_write_unpaired ? "Keeping unpaired:   " : "Discarding unpaired:") << "     " << unpaired_reads << '\n'
-		<< "\tTLEN/Fragment too large: " << TLEN_too_big << '\n'
-		<< "\tReads ---> ... --->:     " << num_for_for << '\n'
-		<< "\tReads <--- ... --->:     " << num_rev_for << '\n'
-		<< "\tReads <--- ... <---:     " << num_rev_rev << '\n'
-		<< '\n'
-		<< "\tReads ---> ... <---:     " << num_for_rev << " (" << std::fixed << std::setprecision(1) << static_cast<double>(num_for_rev) * 100 / (m_reads.size() + m_reads2.size()) << "%)\n";
-	*/
-}
 } // unnamed namespace
 
 #endif /* NGSHMMALIGN_ALIGNER_IMPL_HPP */
