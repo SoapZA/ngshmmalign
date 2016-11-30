@@ -568,7 +568,7 @@ struct partioned_genome
 			std::vector<reference_haplotype> msa_reads(fasta_read<reference_haplotype>(i.m_files_dir + "/reads_aln.fasta"));
 			if (msa_reads.empty())
 			{
-				// no reads in alignment
+				// no reads in alignment, have to load reference
 				msa_reads = fasta_read<reference_haplotype>(i.m_files_dir + "/reads.fasta");
 			}
 			const reference_haplotype ref_seq(msa_reads.back());
@@ -602,7 +602,19 @@ struct partioned_genome
 						{
 							// base
 							++nongap_histogram[j];
-							++base_dist[j][base];
+
+							const auto it = wobble_to_ambig_bases.find(base);
+							if (it == wobble_to_ambig_bases.end())
+							{
+								std::cerr << "ERROR: Could not map base '" << base << "' to unambiguous bases!" << std::endl;
+								exit(EXIT_FAILURE);
+							}
+
+							const std::string& all_bases = it->second;
+							for (char non_ambig_base : all_bases)
+							{
+								base_dist[j][non_ambig_base] += (1.0 / all_bases.length());
+							}
 						}
 					}
 				}
