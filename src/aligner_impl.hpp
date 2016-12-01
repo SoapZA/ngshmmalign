@@ -1025,10 +1025,18 @@ void single_end_aligner<T>::perform_alignment_impl(
 			{
 				// reverse complementary is better
 				read_entry_ref.SCORE = reverse_score;
-				read_entry_ref.m_reverse_compl = true;
-
 				read_entry_ref.m_cooptimal_alignments = std::move(reverse_alns);
 
+				// flip reverse complementary bit
+				// setting it to true is not enough
+				// imagine:
+				// 1st run:
+				//     <-------    Sequence + QUAL get reverse complemented
+				//
+				// 2nd run:
+				//     ------->    Sequence + QUAL are forward aligned
+				//                 but have originally been reverse complemented
+				read_entry_ref.m_reverse_compl = !(read_entry_ref.m_reverse_compl);
 				read_entry_ref.m_fastq_record.m_seq = std::move(rev_seq);
 				std::reverse(read_entry_ref.m_fastq_record.m_qual.begin(), read_entry_ref.m_fastq_record.m_qual.end());
 			}
@@ -1036,8 +1044,6 @@ void single_end_aligner<T>::perform_alignment_impl(
 			{
 				// forward is better
 				read_entry_ref.SCORE = forward_score;
-				read_entry_ref.m_reverse_compl = false;
-
 				read_entry_ref.m_cooptimal_alignments = std::move(forward_alns);
 			}
 		}
