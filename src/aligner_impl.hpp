@@ -846,6 +846,8 @@ void single_end_aligner<T>::perform_alignment_impl(
 {
 	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 
+	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
+
 	const auto end_it = m_reads.cend();
 	unsigned long progress = 0;
 
@@ -1049,6 +1051,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 #endif
 
 	display_thread.join();
+	std::cout << std::endl;
 }
 
 template <typename T>
