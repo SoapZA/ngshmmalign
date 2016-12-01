@@ -254,7 +254,7 @@ void reference_genome<T>::init_emission_table(
 					exit(EXIT_FAILURE);
 				}
 
-				if ((sufficient_coverage_check) && (coverage <= std::ceil(1.0 / min_freq)))
+				if ((sufficient_coverage_check) && (coverage <= std::ceil(2.0 / min_freq)))
 				{
 					// low coverage, use majority base instead
 					cur_allel_table = { 0.0, 0.0, 0.0, 0.0, 0.0 };
@@ -295,11 +295,20 @@ void reference_genome<T>::init_emission_table(
 			else
 			{
 				// have no coverage, need to take sacrifical steps to construct
-				if ((m_emission_tables_initialized == true) && (m_ambig_ref.length() == m_L) && (m_majority_ref.length() == m_L))
+				if (m_emission_tables_initialized == true)
 				{
-					// use old emissions from some other source
-					new_majority_ref.push_back(std::tolower(m_majority_ref[i]));
-					new_ambig_ref.push_back(std::tolower(m_ambig_ref[i]));
+					if ((m_ambig_ref.length() == m_L) && (m_majority_ref.length() == m_L))
+					{
+						// use old emissions from some other source
+						new_majority_ref.push_back(std::tolower(m_majority_ref[i]));
+						new_ambig_ref.push_back(std::tolower(m_ambig_ref[i]));
+					}
+					else
+					{
+						// error out
+						std::cerr << "ERROR: Lengths of old and new emission tables do not match up." << std::endl;
+						exit(EXIT_FAILURE);
+					}
 				}
 				else
 				{

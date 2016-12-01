@@ -625,7 +625,7 @@ struct partioned_genome
 			is_locus_cov_high.reserve(total_length_of_MSA);
 			for (int32_t j = 0; j < total_length_of_MSA; ++j)
 			{
-				is_locus_cov_high.push_back((static_cast<double>(nongap_histogram[j]) / coverage[j]) > 0.5);
+				is_locus_cov_high.push_back(nongap_histogram[j] > 0.5 * coverage[j]);
 			}
 
 			// 3. find start of region with respect to reference
@@ -678,14 +678,27 @@ struct partioned_genome
 			valid_loci.reserve(ref_end - ref_start + 1);
 			for (int32_t j = ref_start; j <= ref_end; ++j)
 			{
-				// a general problem of our estimation scheme is that is rather sensitive
-				// to artefacts in low coverage regimes. In order to decide whether
-				// a locus in the alignment is 'valid', we therefore require at least
-				// 3 reads supporting the locus AND a minimum fraction of 'min_base_cov',
-				// and if we have less than 3 reads, all of them must support the position.
-				if ((static_cast<double>(nongap_histogram[j]) / coverage[j]) >= std::min<double>(std::max<double>(2.5 / coverage[j], min_base_cov), 1.0))
+				if (coverage[j])
 				{
-					valid_loci.push_back(j);
+					// A general problem of our estimation scheme is that it is rather sensitive
+					// to artefacts in low coverage regimes. In order to decide whether a locus
+					// in the alignment is 'valid', we therefore require at least the 2 * reciprocal
+					// of 'min_base_cov' number of reads supporting the locus AND a minimum
+					// fraction of 'min_base_cov', and if we have less, 50% must support the position.
+					if (coverage[j] >= 2.0 / min_base_cov)
+					{
+						if (nongap_histogram[j] >= min_base_cov * coverage[j])
+						{
+							valid_loci.push_back(j);
+						}
+					}
+					else
+					{
+						if (nongap_histogram[j] > 0.5 * coverage[j])
+						{
+							valid_loci.push_back(j);
+						}
+					}
 				}
 			}
 
@@ -694,7 +707,7 @@ struct partioned_genome
 				const double coverage = std::accumulate(&allel_freq[static_cast<std::size_t>(0)], &allel_freq[static_cast<std::size_t>(4)], 0.0);
 				for (char k : { 'A', 'C', 'G', 'T' })
 				{
-					if (allel_freq[k] / coverage < min_base_cutoff)
+					if (allel_freq[k] < min_base_cutoff * coverage)
 					{
 						allel_freq[k] = 0;
 					}
@@ -723,13 +736,13 @@ struct partioned_genome
 				}
 
 				num_M += (!num_M);
-				if ((num_M_D / num_M < 0.05) || (num_M < 10))
+				if ((num_M_D < 0.05 * num_M) || (num_M < 10))
 				{
 					num_M_D = 0;
 				}
 
 				num_D += (!num_D);
-				if ((num_D_D / num_D < 0.05) || (num_D < 10))
+				if ((num_D_D < 0.05 * num_D) || (num_D < 10))
 				{
 					num_D_D = 0;
 				}
