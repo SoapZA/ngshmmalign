@@ -934,12 +934,16 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 		<< std::right << std::setw(value_col_width) << m_into_end.from_right_clip << std::endl;
 	print_sum<T>(output, m_into_right_clip.from_right_clip + m_into_end.from_right_clip, fail_on_non_summation, "\n", "Sum:");
 
-	int j = 0;
-	output << std::endl
+	output << std::boolalpha << std::fixed << std::setprecision(5) << std::endl
 		   << "Emission tables (log):" << std::endl;
-	for (const auto& i : m_E)
+	for (int32_t j = 0; j < m_L; ++j)
 	{
-		output << j++ << ":\t" << i << std::endl;
+		output << std::left << std::setw(7) << j;
+		for (char c : { 'A', 'C', 'G', 'T', 'N' })
+		{
+			output << std::right << std::setw(8) << m_E[j][c] << " (" << m_allel_freq[j][c] << ", " << std::setw(5) << m_table_of_included_bases[j][c] << ")";
+		}
+		output << std::endl;
 	}
 	output << std::endl
 		   << "Emission tables (uniform):" << std::endl

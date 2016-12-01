@@ -170,6 +170,9 @@ protected:
 	// 3. load parameters
 	uint32_t get_length_profile() const noexcept;
 
+	// 5. perform alignment
+	void perform_alignment_impl(bool exhaustive, bool verbose) noexcept;
+
 	// 6. post-alignment processing
 	virtual void flag_reads() noexcept;
 

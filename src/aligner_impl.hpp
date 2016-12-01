@@ -785,7 +785,7 @@ void single_end_aligner<T>::estimate_parameters(
 
 	// 1. perform rough alignment first
 	std::cout << ++m_phase << ") Performing first rough alignment" << std::endl;
-	perform_alignment(false, verbose);
+	perform_alignment_impl(false, verbose);
 
 	// 2. chop up genome and extract reads
 	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
@@ -822,16 +822,6 @@ void single_end_aligner<T>::estimate_parameters(
 }
 
 // 5. perform alignment
-template <typename T, typename std::enable_if<std::is_floating_point<T>::value, int>::type = 0>
-void alignment_impl(
-	std::vector<read_entry>& reads,
-	const reference_genome<T>& parameters,
-	const bool exhaustive,
-	const bool verbose) noexcept
-{
-	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
-}
-
 void display_progress(
 	const unsigned long& progress,
 	const unsigned long total) noexcept
@@ -850,15 +840,11 @@ void display_progress(
 }
 
 template <typename T>
-void single_end_aligner<T>::perform_alignment(
+void single_end_aligner<T>::perform_alignment_impl(
 	const bool exhaustive,
 	const bool verbose) noexcept
 {
-	std::cout << ++m_phase << ") Performing alignment" << std::endl;
-	std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
-
-	// actual alignment
-	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
+	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 
 	const auto end_it = m_reads.cend();
 	unsigned long progress = 0;
@@ -1063,19 +1049,32 @@ void single_end_aligner<T>::perform_alignment(
 #endif
 
 	display_thread.join();
-	std::cout << std::endl;
+}
+
+template <typename T>
+void single_end_aligner<T>::perform_alignment(
+	const bool exhaustive,
+	const bool verbose) noexcept
+{
+	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
+
+	std::cout << ++m_phase << ") Performing alignment" << std::endl;
+	std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
+
+	// perform actual alignment
+	perform_alignment_impl(exhaustive, verbose);
 
 	std::chrono::steady_clock::time_point time_end = std::chrono::steady_clock::now();
 	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time_end - time_start).count() / 1E9;
 	const double performance = m_reads.size() / duration;
 
-	std::cout
-		<< "   Alignment took "
-		<< static_cast<uint32_t>(duration) / 3600 << "h "
-		<< (static_cast<uint32_t>(duration) / 60) % 60 << "min "
-		<< static_cast<uint32_t>(duration) % 60 << "s ("
-		<< std::fixed << std::setprecision(1)
-		<< performance / num_threads << " reads/thread/s, " << performance << " reads/s)." << std::endl;
+	std::cout << std::endl
+			  << "   Alignment took "
+			  << static_cast<uint32_t>(duration) / 3600 << "h "
+			  << (static_cast<uint32_t>(duration) / 60) % 60 << "min "
+			  << static_cast<uint32_t>(duration) % 60 << "s ("
+			  << std::fixed << std::setprecision(1)
+			  << performance / num_threads << " reads/thread/s, " << performance << " reads/s)." << std::endl;
 }
 
 // 6. post-alignment processing
