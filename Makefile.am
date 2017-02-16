@@ -1,5 +1,7 @@
 AM_CPPFLAGS = -I$(top_srcdir)/src $(BOOST_CPPFLAGS)
 
+EXTRA_DIST = CMakeLists.txt
+
 bin_PROGRAMS = ngshmmalign
 
 ngshmmalign_SOURCES = \

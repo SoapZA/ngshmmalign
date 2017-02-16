@@ -6,7 +6,6 @@ AC_INIT(
 	[david.seifert@bsse.ethz.ch],
 	[ngshmmalign],
 	[https://github.com/cbg-ethz/ngshmmalign])
-AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_SRCDIR([src/main.cpp])
 AC_LANG([C++])
 
@@ -87,7 +86,7 @@ AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
 dnl ===============
 dnl Check for Boost
 dnl ===============
-AX_BOOST_BASE([1.50], [], [AC_MSG_ERROR([could not find a suitable boost installation.])])
+AX_BOOST_BASE([1.59], [], [AC_MSG_ERROR([could not find a suitable boost installation.])])
 AX_BOOST_SYSTEM
 AX_BOOST_PROGRAM_OPTIONS
 AX_BOOST_FILESYSTEM

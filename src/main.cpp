@@ -18,8 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
-#include <config.h>
-
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -213,7 +211,9 @@ int main(int argc, const char* argv[])
 	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
 	// set OpenMP number of threads
+#ifdef _OPENMP
 	omp_set_num_threads(num_threads);
+#endif
 
 	if (!boost::filesystem::exists(profile_filename))
 	{

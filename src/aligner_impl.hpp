@@ -40,7 +40,9 @@
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/progress.hpp>
 
-#include <omp.h>
+#ifdef _OPENMP
+	#include <omp.h>
+#endif
 
 #include "aligner.hpp"
 #include "debug.hpp"
@@ -342,7 +344,7 @@ void single_end_aligner<T>::load_parameters(
 	}
 	else if (ref_ext == ".hmm")
 	{
-		std::cout << "   Input = " PACKAGE " serialised format" << std::endl;
+		std::cout << "   Input = " PACKAGE_NAME " serialised format" << std::endl;
 		m_parameters.set_parameters(
 			input_file,
 			error_rates,
