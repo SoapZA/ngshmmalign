@@ -9,7 +9,7 @@ In the current sequencing landscape, NGS reads are aligned using such aligners a
 ## Idea
 The profile HMM is a well-known probabilistic graphical model, known for instance from HMMER (http://hmmer.org):
 <p align="center">
-	<img src="img/pHMM.png?raw=true" alt="Profile HMM graphical model"/>
+	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/pHMM.svg" width="85%" alt="Profile HMM graphical model"/>
 </p>
 Here the reference genome consists of the Match (blue) states. Match states can emit only a single base (at conserved loci) or multiple bases (at loci with SNVs). Insertions (red) model technical artefacts, whereas deletions (green) capture both technical artefacts and true biological indels. The flanking states (violet) capture technical problems, such as sequencing into the adapter regions on an Illumina sequencer, and will lead to the clipping of bases.
 
