@@ -76,6 +76,20 @@ install(
 	TARGETS ngshmmalign
 	DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+#############
+# Testsuite #
+#############
+include(CTest)
+
+if(BUILD_TESTING)
+	foreach(test_var dna_array_compile_test type_caster_compile_test reference_compile_test hmmalign_forward_compile_test)
+		add_executable(${test_var} testsuite/${test_var}.cpp)
+		target_include_directories(${test_var} PRIVATE ${Boost_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+		target_link_libraries(${test_var} ${Boost_LIBRARIES})
+		add_test(NAME ${test_var} COMMAND ${test_var})
+	endforeach()
+endif()
+
 ###########
 # Summary #
 ###########
