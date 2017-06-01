@@ -9,7 +9,7 @@ In the current sequencing landscape, NGS reads are aligned using such aligners a
 ## Idea
 The profile HMM is a well-known probabilistic graphical model, known for instance from HMMER (http://hmmer.org):
 <p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/pHMM.svg" width="85%" alt="Profile HMM graphical model"/>
+  <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/pHMM.svg" width="85%" alt="Profile HMM graphical model"/>
 </p>
 Here the reference genome consists of the Match (blue) states. Match states can emit only a single base (at conserved loci) or multiple bases (at loci with SNVs). Insertions (red) model technical artefacts, whereas deletions (green) capture both technical artefacts and true biological indels. The flanking states (violet) capture technical problems, such as sequencing into the adapter regions on an Illumina sequencer, and will lead to the clipping of bases.
 
@@ -86,65 +86,136 @@ As **ngshmmalign** is still under heavy development, we will not be making relea
 
 1.  A **C++11** compliant compiler. The **ngshmmalign** codebase makes extensive use of C++11 features.
 
-    GCC 4.8 and later have been verified to work, although we recommend you use at least GCC 5. Clang 3.7 and later have been verified and are also recommended, due to Clang introducing OpenMP with 3.7. Versions of Clang before 3.7 will not be able to utilise multi-threading.
+    GCC 4.8 and later have been verified to work, although we recommend you use at least GCC 5. Clang 3.7 and later have been verified and are also recommended, due to Clang introducing OpenMP only with 3.7. Versions of Clang before 3.7 will not be able to utilise multi-threading.
 
-2.  **Autoconf**; latest 2.69 release (http://www.gnu.org/software/autoconf/)
-
-    GNU Autoconf produces the ./configure script from configure.ac.
-
-3.  **Automake**; latest 1.15 release (http://www.gnu.org/software/automake/)
-
-    GNU Automake produces the Makefile.in precursor, that is processed with ./configure to yield the final Makefile.
-
-4.  **Autoconf Archive**; latest 2016.03.20 release (http://www.gnu.org/software/autoconf-archive/)
-
-    Our configure.ac requires a number of m4 macros from the Autoconf archive.
-
-5.  **Boost**; latest 1.60 release (http://www.boost.org/)
+2.  **Boost**; at least 1.59 (http://www.boost.org/)
 
     Boost provides the necessary abstractions for many different types.
 
-6.  **standard Unix utilities**; such as sed, etc...
+3.  **standard Unix utilities**; such as sed, make, etc...
 
-    If you cannot execute a command, chances are that you are missing one of the more common utilities we require in addition to the tools listed above.
+    If you cannot execute a command, chances are that you are missing one of the more common utilities we require in addition to the tools listed above. Most systems will include GNU Make. If you will be building ngshmmalign with CMake, you can avoid depending on Make and also use Ninja.
 
-7.  **MAFFT** (optional); (http://mafft.cbrc.jp/alignment/software/)
+4.  **MAFFT** (optional); (http://mafft.cbrc.jp/alignment/software/)
 
     If you wish to align reads and optimize the reference sequence concurrently. MAFFT is used to align a subsample of reads in order to estimate biological indels.
 
-### OS X
-We strongly recommend you use MacPorts (http://www.macports.org) to install dependencies. We also recommend you employ Clang from MacPorts, as it is the only OpenMP-capable compiler that is simultaneously ABI-compatible with installed libraries, such as boost. While building with GCC on OS X is possible, it requires an orthogonal toolchain which is far more involved and beyond the scope of this README.
+5.  **CMake** (optional); at least 3.1 (http://cmake.org)
+
+    If you wish to compile **ngshmmalign** using CMake instead of using the configure script, you will need access to CMake.
+
+If you wish to bootstrap the Autotools-based build system from a git checkout, you will also need
+
+1.  **Autoconf**; latest 2.69 release (http://www.gnu.org/software/autoconf/)
+
+    GNU Autoconf produces the ./configure script from configure.ac.
+
+2.  **Automake**; latest 1.15 release (http://www.gnu.org/software/automake/)
+
+    GNU Automake produces the Makefile.in precursor, that is processed with ./configure to yield the final Makefile.
+
+3.  **Autoconf Archive**; at least 2016.03.20 (http://www.gnu.org/software/autoconf-archive/)
+
+    Our configure.ac requires a number of m4 macros from the Autoconf archive.
+
+
+### macOS
+We strongly recommend you use MacPorts (http://www.macports.org) to install dependencies. We also recommend you employ Clang from MacPorts, as it is the only OpenMP-capable compiler that is simultaneously ABI-compatible with installed libraries, such as boost. While building with GCC on macOS is possible, it requires an orthogonal toolchain which is far more involved and beyond the scope of this README.
 
 ### GNU/Linux
 On a GNU/Linux system, the aforementioned recommendations are reversed. Most GNU/Linux distributions are built using GCC/libstdc++, which as of GCC 5.1 is not backwards compatible with Clang, and as such building with Clang produced object files will fail in the final linking step.
 
 
 ## Building
-1.  If you have all dependencies satisfied, proceed by generating the build system files
-    ```
-    ./autogen.sh
-    ```
+Let's assume you'd like to install ngshmmalign into `/usr/local/ngshmmalign`. Replace this path with a path of your preference in the installation instructions below.
 
-2.  Then, run the configure script. On GNU/Linux, you would do
-    ```
-    ./configure
-    ```
-    whereas on OS X, you would also need to specify the OpenMP-capable C++ compiler
-    ```
-    ./configure CXX=clang++-mp-3.7
-    ```
-	for instance, if you installed Clang 3.7 from MacPorts.
+First download the proper tarball from the release page, extract it and change to the dir.
 
-3.  Then, compile the sources using
+### Using Autotools
+1.  First, run the configure script. On GNU/Linux, you would do
+    ```
+    ./configure --prefix=/usr/local/ngshmmalign
+    ```
+    whereas on macOS, you would also need to specify the OpenMP-capable C++ compiler
+    ```
+    ./configure --prefix=/usr/local/ngshmmalign CXX=clang++-mp-3.7
+    ```
+    for instance, if you installed Clang 3.7 from MacPorts.
+
+2.  Then, compile the sources using
     ```
     make -j2
+    ```
+    where the `2` is the number of threads used for compilation.
+
+3.  (Optionally) run the test suite
+    ```
+    make -j2 check
     ```
 
 4.  You should now have a binary called `ngshmmalign` in the current build directory. You can either install this manually or call
     ```
-    make DESTDIR="${D}" install
+    make install
     ```
-    where you specify the destination in `${D}`.
+
+#### Bootstrapping Autotools for git checkouts
+The git repository does not contain the bootstrapped files, hence you'll need to generate them by doing
+
+```
+./autogen.sh
+```
+or
+```
+autoreconf -vif
+```
+
+### Using CMake
+1.  Create a build directory and cd into it
+    ```
+    mkdir build && cd build
+    ```
+
+2.  Initialise CMake by running
+    ```
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ngshmmalign ..
+    ```
+    or if you prefer using Ninja
+    ```
+    cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ngshmmalign -GNinja ..
+    ```
+    If you'd like to run the testsuite, be sure to enable it too by appending `-DBUILD_TESTING=ON` to the above `cmake` line.
+    On macOS, remember to also specify the OpenMP-capable clang by passing in `CXX`
+    ```
+    CXX=clang++-mp-3.7 cmake -DCMAKE_INSTALL_PREFIX=/usr/local/ngshmmalign ..
+    ```
+
+3.  Compile the sources
+    ```
+    make -j2
+    ```
+    respectively
+    ```
+    ninja -j 2
+    ```
+    where the `2` is the number of threads used for compilation.
+
+4.  (Optionally) run the test suite
+    ```
+    make test
+    ```
+    or
+    ```
+    ninja test
+    ```
+
+5.  You should now have a binary called `ngshmmalign` in the current build directory. You can either install this manually or call
+    ```
+    make install
+    ```
+    or
+    ```
+    ninja install
+    ```
 
 
 ## Running
