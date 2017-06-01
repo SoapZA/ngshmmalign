@@ -24,42 +24,52 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 - Produces both a consensus reference containing ambiguous bases (e.g. A + G = R) and a reference where bases are determined by majority vote.
 - Serializes the (inferred) profile HMM transition and base emission tables in order to reuse for future alignments.
 - Picks a _random_ optimal alignment. All currently known aligners pick an optimal alignment deterministically. While such a strategy makes sense for many situations, it might not be optimal for small viruses. Many viruses for instance have stretches of the same base, also known as homopolymers. Homopolymers can lead to problems, as the deletion probability increases disproportionately in such regions. Imagine having a homopolymeric stretch and some erroneous (lacking one base in the homopolymer) NGS reads. In such cases **bwa** produces the following alignment:
-<p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/bwa_gaps.svg" width="95%"/>
-</p>
+
+  <p align="center">
+    <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/bwa_gaps.svg" width="95%"/>
+  </p>
+
   which is suboptimal, as the frequencies of gaps at the first position of the homopolymer will likely be picked up by SNV callers downstream. In the case of **ngshmmalign** the alignment would look like
-<p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/ngshmmalign_gaps.svg" width="95%"/>
-</p>
+
+  <p align="center">
+    <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/ngshmmalign_gaps.svg" width="95%"/>
+  </p>
+
   which is much better, as the _technical_ error is **not** turned into a _systematic_ error, as in the case of all deterministic alignment algorithms.
 - The profile HMM allows for introducing gaps due to the inhomogeneous Markov chain, which is not possible with other aligners, due to their costly genome-wide uniform gap open penalties. Assume we have two references, with one having lost a codon (i.e. an indel). We have two reads, both originating from reference 2. An alignment with **bwa** would yield
-<p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/bwa_indel.svg" width="95%" alt="Incorrect bwa alignment"/>
-</p>
+
+  <p align="center">
+    <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/bwa_indel.svg" width="95%" alt="Incorrect bwa alignment"/>
+  </p>
+
   which is incorrect, whereas an alignment with **ngshmmalign** would yield
-<p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/ngshmmalign_indel.svg" width="95%" alt="Correct ngshmmalign alignment"/>
-</p>
+
+  <p align="center">
+    <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/ngshmmalign_indel.svg" width="95%" alt="Correct ngshmmalign alignment"/>
+  </p>
+
   due to **ngshmmalign** being liberal on the gap-open penalties around the indel.
 - Can filter likely invalid paired-end read configuration, for instance:
-<p align="center">
-	<img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/PE_Modes.svg" width="70%" alt="Paired-end alignment outcomes"/>
-</p>
+
+  <p align="center">
+    <img src="https://cdn.rawgit.com/cbg-ethz/ngshmmalign/master/img/PE_Modes.svg" width="70%" alt="Paired-end alignment outcomes"/>
+  </p>
+
   The latter three cases are likely to be a technical artefact and can lead to problems in downstream haplotype assembly.
 - Writing the `NM:i:` tag, the number of mismatches (or edit distance) to the reference. This takes ambiguous bases into account, for instance
-  
+
   ```
   Ref:   AARAA
   Read:   AAA
   ```
-  
+
   gives an edit distance of 0, since `R` can be either an `A` or `G`, whereas
-  
+
   ```
   Ref:   AARAA
   Read:   ATA
   ```
-  
+
   gives an edit distance of 1, as `R` does not include a `T`.
 - Writing the CIGAR using either `'M'` for aligned bases, or `'='` and `'X'` for alignment match and mismatch, respectively. When using `'X'` for alignment mismatches, the number of `'X'` is consistent with the `NM:i:` tag.
 - Writing the `MD:Z:` tag correctly, allowing for reference-free analysis.
