@@ -41,7 +41,7 @@
 #include <boost/progress.hpp>
 
 #ifdef _OPENMP
-	#include <omp.h>
+#include <omp.h>
 #endif
 
 #include "aligner.hpp"

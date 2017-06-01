@@ -2,11 +2,9 @@
 
 int main()
 {
-	typedef double fp_type;
-
 	log_exp_base = 1.000001;
 
-	std::vector<dna_array<fp_type, 5>> E_p{
+	std::vector<dna_array<double, 5>> E_p{
 		// A     C     G     T
 		{ 1.00, 0.00, 0.00, 0.00 }, // 0
 		{ 1.00, 0.00, 0.00, 0.00 }, // 1
@@ -18,7 +16,7 @@ int main()
 		{ 0.65, 0.35, 0.00, 0.00 }, // 7
 		{ 0.65, 0.35, 0.00, 0.00 }, // 8
 	};
-	std::vector<fp_type> M_D_p{
+	std::vector<double> M_D_p{
 		0.00, // 0 -> 1
 		0.00, // 1 -> 2
 		0.35, // 2 -> 3
@@ -28,7 +26,7 @@ int main()
 		0.00, // 6 -> 7
 		0.00 // 7 -> 8
 	};
-	std::vector<fp_type> D_D_p{
+	std::vector<double> D_D_p{
 		0.00, // 0 -> 1
 		0.00, // 1 -> 2
 		0.00, // 2 -> 3
@@ -39,21 +37,21 @@ int main()
 		0.00 // 7 -> 8
 	};
 
-	fp_type min_allele_freq = 0.05;
-	fp_type substitution_rate = 0.005;
+	double min_allele_freq = 0.05;
+	double substitution_rate = 0.005;
 
-	fp_type gap_open = 0.005;
-	fp_type gap_extend = 0.19;
+	double gap_open = 0.005;
+	double gap_extend = 0.19;
 
-	fp_type insert_open = 0.17;
-	fp_type insert_extend = 0.18;
+	double insert_open = 0.17;
+	double insert_extend = 0.18;
 
-	fp_type left_clip_open = 0.01;
-	fp_type left_clip_extend = 0.90;
-	fp_type right_clip_open = 0.01;
-	fp_type right_clip_extend = 0.90;
+	double left_clip_open = 0.01;
+	double left_clip_extend = 0.90;
+	double right_clip_open = 0.01;
+	double right_clip_extend = 0.90;
 
-	reference_genome<fp_type> fp_pp;
+	reference_genome<double> fp_pp;
 	fp_pp.set_parameters(
 		decltype(E_p)(E_p),
 		decltype(M_D_p)(M_D_p),
@@ -93,7 +91,7 @@ int main()
 		true);
 	int_pp.display_parameters(std::cout);
 
-	reference_genome<fp_type> fp_pp_convert1(int_pp);
+	reference_genome<double> fp_pp_convert1(int_pp);
 	reference_genome<int32_t> int_pp_convert2(fp_pp_convert1);
 
 	std::cout << "Displaying parameters for doubly converted parameter pack:\n";

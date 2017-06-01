@@ -203,6 +203,9 @@ struct reference_genome
 	reference_genome() = default;
 
 	template <typename V>
+	friend struct reference_genome;
+
+	template <typename V>
 	reference_genome(const reference_genome<V>& v);
 
 	// Setter

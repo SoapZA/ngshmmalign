@@ -87,14 +87,23 @@ reference_haplotype::reference_haplotype(const std::string& id, std::string&& se
 template <typename T>
 template <typename V>
 reference_genome<T>::reference_genome(const reference_genome<V>& v)
+	: m_L(v.m_L),
+	  m_emission_tables_initialized(v.m_emission_tables_initialized),
+	  m_table_of_included_bases(v.m_table_of_included_bases),
+	  m_majority_ref(v.m_majority_ref),
+	  m_ambig_ref(v.m_ambig_ref),
+	  read_length_profile(v.read_length_profile),
+	  m_allel_freq(v.m_allel_freq),
+	  m_vec_M_to_D_p(v.m_vec_M_to_D_p),
+	  m_vec_D_to_D_p(v.m_vec_D_to_D_p),
+	  m_kmer_length(v.m_kmer_length),
+	  m_kmer_index(v.m_kmer_index)
 {
 	using V_ref_type = typename reference_genome<V>::template trans_matrix<V>;
 	using T_ref_type = typename reference_genome<T>::template trans_matrix<T>;
 
 	T(*cast)
 	(const V&) = type_caster<V, T>;
-
-	this->m_L = v.m_L;
 
 	/* clip transition probabilities */
 	// left-clip
@@ -131,12 +140,10 @@ reference_genome<T>::reference_genome(const reference_genome<V>& v)
 	this->m_into_end.from_last_match = cast(v.m_into_end.from_last_match);
 
 	/* emission probabilities */
-	std::vector<dna_array<T, 5>> m_E;
 	this->m_E.resize(m_L);
-	std::copy(v.m_E.begin(), v.m_E.end(), this->m_E.begin());
+	std::copy(v.m_E.cbegin(), v.m_E.cend(), this->m_E.begin());
 
 	this->m_uniform_base_e = v.m_uniform_base_e;
-	this->m_table_of_included_bases = v.m_table_of_included_bases;
 }
 
 // Setter
