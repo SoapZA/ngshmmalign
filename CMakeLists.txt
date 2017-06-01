@@ -76,6 +76,10 @@ install(
 	TARGETS ngshmmalign
 	DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+install(
+	FILES README.md
+	DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
 #############
 # Testsuite #
 #############
