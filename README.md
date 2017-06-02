@@ -82,7 +82,7 @@ Here the reference genome consists of the Match (blue) states. Match states can 
 
 
 ## Requirements
-As **ngshmmalign** is still under heavy development, we will not be making release tarballs yet. If you still wish to give **ngshmmalign** a try, you'll need the following tools and libraries:
+In order to install **ngshmmalign**, download a release tarball from https://github.com/cbg-ethz/ngshmmalign/releases. You can also install **ngshmmalign** from a git checkout, although this is not the recommended.
 
 1.  A **C++11** compliant compiler. The **ngshmmalign** codebase makes extensive use of C++11 features.
 
