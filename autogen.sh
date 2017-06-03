@@ -7,7 +7,7 @@ clean_files() {
 	rm -rf .Tpo
 	rm -rf *.dSYM
 	rm -rf ngshmmalign
-	rm -rf ngshmmalign-0.1.tar.bz2
+	rm -rf ngshmmalign-*.tar.bz2
 
 	# Autotools
 	rm -rf Makefile
@@ -22,23 +22,20 @@ clean_files() {
 	rm -rf missing
 	rm -rf stamp-h1
 	rm -rf test-driver
-	
+
 	# source
 	rm -rf src/*.o
 	rm -rf src/.deps
 	rm -rf src/.dirstamp
-	
+
 	# testsuite
 	rm -rf *.log
 	rm -rf *.trs
-	rm -rf dna_array_compile_test
-	rm -rf hmmalign_forward_compile_test
-	rm -rf type_caster_compile_test
-	rm -rf reference_compile_test
+	rm -rf *_compile_test
 	rm -rf testsuite/*.o
 	rm -rf testsuite/.deps
 	rm -rf testsuite/.dirstamp
-	
+
 	# OS X cruft
 	find . -name '.DS_Store' -type f -delete
 }
