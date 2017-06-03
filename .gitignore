@@ -26,3 +26,22 @@
 *.exe
 *.out
 *.app
+
+# Autotools
+Makefile
+Makefile.in
+aclocal.m4
+autom4te.cache/
+compile
+config.*
+configure
+depcomp
+install-sh
+missing
+ngshmmalign
+test-driver
+.deps/
+.dirstamp
+*_test
+*.log
+*.trs
