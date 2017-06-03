@@ -43,7 +43,15 @@ boost::string_ref read_entry::RNAME;
 
 int main(int argc, const char* argv[])
 {
-	std::cout.imbue(std::locale("en_US.UTF-8"));
+	try
+	{
+		std::cout.imbue(std::locale("en_US.UTF-8"));
+	}
+	catch (std::runtime_error)
+	{
+		std::cerr << "Warning: en_US.UTF-8 could not be imbued, this is likely due to a missing locale on your system\n";
+		std::cout.imbue(std::locale::classic());
+	}
 
 	// parameters
 	std::string profile_filename;
@@ -210,7 +218,7 @@ int main(int argc, const char* argv[])
 
 	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
-	// set OpenMP number of threads
+// set OpenMP number of threads
 #ifdef _OPENMP
 	omp_set_num_threads(num_threads);
 #endif
