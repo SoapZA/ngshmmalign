@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.1)
 
 # set project name
 cmake_policy(SET CMP0048 NEW)
-project(ngshmmalign VERSION 0.1 LANGUAGES CXX)
+project(ngshmmalign VERSION 0.1.1 LANGUAGES CXX)
 add_definitions(-DPACKAGE_NAME="${PROJECT_NAME}" -DPACKAGE_VERSION="${PROJECT_VERSION}")
 
 # on macOS, MACOSX_RPATH is enabled by default on more recent versions

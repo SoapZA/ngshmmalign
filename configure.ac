@@ -2,7 +2,7 @@ dnl Initialise Autoconf
 AC_PREREQ([2.69])
 AC_INIT(
 	[ngshmmalign],
-	[0.1],
+	[0.1.1],
 	[david.seifert@bsse.ethz.ch],
 	[ngshmmalign],
 	[https://github.com/cbg-ethz/ngshmmalign])
