@@ -27,16 +27,17 @@ ngshmmalign_LDADD = \
 # CHECKS
 TESTS = $(check_PROGRAMS)
 check_PROGRAMS = \
-	dna_array_compile_test \
-	type_caster_compile_test \
-	reference_compile_test \
-	hmmalign_forward_compile_test
+	testsuite/dna_array_compile_test \
+	testsuite/type_caster_compile_test \
+	testsuite/reference_compile_test \
+	testsuite/hmmalign_forward_compile_test
 
-dna_array_compile_test_SOURCES = testsuite/dna_array_compile_test.cpp
-type_caster_compile_test_SOURCES = testsuite/type_caster_compile_test.cpp
+testsuite_dna_array_compile_test_SOURCES = testsuite/dna_array_compile_test.cpp
 
-reference_compile_test_SOURCES = testsuite/reference_compile_test.cpp
-reference_compile_test_LDADD = $(BOOST_LDFLAGS) $(BOOST_SYSTEM_LIB)
+testsuite_type_caster_compile_test_SOURCES = testsuite/type_caster_compile_test.cpp
 
-hmmalign_forward_compile_test_SOURCES = testsuite/hmmalign_forward_compile_test.cpp
-hmmalign_forward_compile_test_LDADD = $(BOOST_LDFLAGS) $(BOOST_SYSTEM_LIB)
+testsuite_reference_compile_test_SOURCES = testsuite/reference_compile_test.cpp
+testsuite_reference_compile_test_LDADD = $(BOOST_LDFLAGS) $(BOOST_SYSTEM_LIB)
+
+testsuite_hmmalign_forward_compile_test_SOURCES = testsuite/hmmalign_forward_compile_test.cpp
+testsuite_hmmalign_forward_compile_test_LDADD = $(BOOST_LDFLAGS) $(BOOST_SYSTEM_LIB)

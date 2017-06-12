@@ -29,9 +29,9 @@ clean_files() {
 	rm -rf src/.dirstamp
 
 	# testsuite
-	rm -rf *.log
-	rm -rf *.trs
-	rm -rf *_compile_test
+	rm -rf testsuite/*.log
+	rm -rf testsuite/*.trs
+	rm -rf testsuite/*_compile_test
 	rm -rf testsuite/*.o
 	rm -rf testsuite/.deps
 	rm -rf testsuite/.dirstamp

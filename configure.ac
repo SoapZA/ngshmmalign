@@ -15,27 +15,26 @@ dnl ========================================================================
 dnl Check whether we want to set defaults for CXXFLAGS, CPPFLAGS and LDFLAGS
 dnl ========================================================================
 AC_MSG_CHECKING([whether configure should try to set CXXFLAGS/CPPFLAGS/LDFLAGS])
-AS_IF([test "x${CXXFLAGS+set}" = "xset" || test "x${CPPFLAGS+set}" = "xset" || test "x${LDFLAGS+set}" = "xset"],
-	[enable_flags_setting=no],
-	[enable_flags_setting=yes]
-)
+AS_IF([test "x${CXXFLAGS+set}" = "xset" || test "x${CPPFLAGS+set}" = "xset" || test "x${LDFLAGS+set}" = "xset"], [
+	enable_flags_setting=no
+], [
+	enable_flags_setting=yes
+])
 AC_MSG_RESULT([${enable_flags_setting}])
 
 AX_CHECK_ENABLE_DEBUG
-AS_IF([test "x${enable_debug}" = "xno"],
-	[
-		cxxflags_test="-march=native -ffast-math -pedantic -O3"
-		cppflags_test=""
+AS_IF([test "x${enable_debug}" = "xno"], [
+	cxxflags_test="-ffast-math -pedantic -O3"
+	cppflags_test=""
 
-		AC_CANONICAL_HOST
-		AS_CASE([${host_os}],
-			[darwin*],
+	AC_CANONICAL_HOST
+	AS_CASE([${host_os}],
+		[darwin*],
 			[ldflags_test="-Wl,-dead_strip_dylibs"],
-			[linux*],
+		[linux*],
 			[ldflags_test="-Wl,-O1 -Wl,--as-needed"]
-		)
-	]
-)
+	)
+])
 
 
 
@@ -46,7 +45,6 @@ AX_COMPILER_VENDOR
 AX_COMPILER_VERSION
 AC_PROG_SED
 AC_PROG_CXX
-AC_CHECK_HEADERS([cstdint])
 
 
 
@@ -61,18 +59,16 @@ CXXFLAGS="${CXXFLAGS} ${OPENMP_CXXFLAGS}"
 dnl ==================================
 dnl Set CXXFLAGS, CPPFLAGS and LDFLAGS
 dnl ==================================
-AS_IF([test "x${enable_flags_setting}" = "xyes" && test "x${enable_debug}" = "xno"],
-	[
+AS_IF([test "x${enable_flags_setting}" = "xyes" && test "x${enable_debug}" = "xno"], [
 	AX_APPEND_COMPILE_FLAGS([${cxxflags_test} -Wall -Wno-redeclared-class-member -Wno-unused-local-typedef], [CXXFLAGS])
 	CXXFLAGS=$( echo ${CXXFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
-	
+
 	AX_APPEND_COMPILE_FLAGS([${cppflags_test}], [CPPFLAGS])
 	CPPFLAGS=$( echo ${CPPFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
-	
+
 	AX_APPEND_LINK_FLAGS([${ldflags_test}], [LDFLAGS])
 	LDFLAGS=$( echo ${LDFLAGS} | $SED -e 's/^ *//' -e 's/ *$//' )
-	]
-)
+])
 
 
 

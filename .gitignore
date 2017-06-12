@@ -45,3 +45,4 @@ test-driver
 *_test
 *.log
 *.trs
+ngshmmalign-*.tar.bz2
