@@ -70,6 +70,109 @@ struct minimal_alignment
 template <typename T>
 class hmmalign
 {
+private:
+	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
+
+	// left struct
+	struct left_clip_struct
+	{
+		T score;
+
+		bool from_begin : 1;
+		bool from_left_clip : 1;
+	};
+
+	// main matrix
+	struct DP_entry_struct
+	{
+		struct match_struct
+		{
+			T score;
+
+			bool from_begin : 1;
+			bool from_left_clip : 1;
+			bool from_match : 1;
+			bool from_insertion : 1;
+			bool from_deletion : 1;
+		} match;
+
+		struct insertion_struct
+		{
+			T score;
+
+			bool from_match : 1;
+			bool from_insertion : 1;
+		} insertion;
+
+		struct deletion_struct
+		{
+			T score;
+
+			bool from_match : 1;
+			bool from_deletion : 1;
+		} deletion;
+	};
+
+	// right clips
+	struct right_clip_struct
+	{
+		T score;
+
+		bool from_right_clip : 1;
+		boost::dynamic_bitset<> from_match;
+	};
+
+	// terminal
+	struct end_struct
+	{
+		T score;
+
+		bool from_right_clip : 1;
+		boost::dynamic_bitset<> from_match;
+	};
+
+	using genome_index_type = typename std::vector<typename reference_genome<T>::template trans_matrix<T>>::size_type;
+	using seq_index_type = std::string::size_type;
+
+	// memory-related variables
+	seq_index_type m_seq_max = 0;
+	genome_index_type m_region_max = 0;
+
+	std::unique_ptr<left_clip_struct[]> left_clip_matrix;
+	std::unique_ptr<DP_entry_struct[]> DP_matrix;
+	std::unique_ptr<right_clip_struct[]> right_clip_matrix;
+	end_struct end;
+
+	// current alignment data
+	uint32_t reference_start;
+	uint32_t reference_end;
+	seq_index_type seq_L;
+	genome_index_type region_L;
+
+	inline void viterbi_memory_requirements(const int32_t seq_length, const int32_t region_length)
+	{
+		bool reallocate = false;
+
+		if (seq_length > m_seq_max)
+		{
+			reallocate = true;
+			m_seq_max = seq_length;
+		}
+
+		if (region_length > m_region_max)
+		{
+			reallocate = true;
+			m_region_max = region_length;
+		}
+
+		if (reallocate)
+		{
+			left_clip_matrix.reset(new left_clip_struct[m_seq_max - 1]);
+			DP_matrix.reset(new DP_entry_struct[m_seq_max * m_region_max]);
+			right_clip_matrix.reset(new right_clip_struct[m_seq_max - 1]);
+		}
+	}
+
 public:
 	// MARGINAL PROBABILITY of a sequence
 	static T logLik(const reference_genome<T>& parameters, const boost::string_ref& sequence);
@@ -79,12 +182,26 @@ public:
 		return exp_base(logLik(parameters, sequence));
 	}
 
+	hmmalign() = default;
+
 	// OPTIMAL ALIGNMENT of a sequence
-	static T viterbi(
+	T viterbi(
 		const reference_genome<T>& parameters,
 		const boost::string_ref& sequence,
-		uint32_t ref_start,
-		uint32_t ref_end,
+		const uint32_t ref_start,
+		const uint32_t ref_end,
+		std::vector<minimal_alignment>& alignments) noexcept;
+
+private:
+	inline void viterbi_initialize_impl(
+		const reference_genome<T>& parameters,
+		const boost::string_ref& sequence) noexcept;
+	inline void viterbi_recursion_impl(
+		const reference_genome<T>& parameters,
+		const boost::string_ref& sequence) noexcept;
+	inline T viterbi_backtrack_impl(
+		const reference_genome<T>& parameters,
+		const boost::string_ref& sequence,
 		std::vector<minimal_alignment>& alignments) noexcept;
 };
 } // unnamed namespace

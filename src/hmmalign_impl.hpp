@@ -177,8 +177,7 @@ T hmmalign<T>::logLik(
 	}
 	for (seq_index_type j = 1; j < seq_L - 1; ++j)
 	{
-		right_clip_matrix[j] = parameters.m_uniform_base_e[sequence[j]] + log_base(
-																			  right_clip_matrix[j] + parameters.m_into_right_clip.from_right_clip * exp_base(right_clip_matrix[j - 1]));
+		right_clip_matrix[j] = parameters.m_uniform_base_e[sequence[j]] + log_base(right_clip_matrix[j] + parameters.m_into_right_clip.from_right_clip * exp_base(right_clip_matrix[j - 1]));
 	}
 
 	// termination
@@ -199,85 +198,29 @@ T hmmalign<T>::viterbi(
 	const uint32_t ref_end,
 	std::vector<minimal_alignment>& alignments) noexcept
 {
-	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
-	using genome_index_type = typename std::vector<typename reference_genome<T>::template trans_matrix<T>>::size_type;
-	using seq_index_type = std::string::size_type;
+	reference_start = ref_start;
+	reference_end = std::min<uint32_t>(ref_end, parameters.m_L);
 
-	const uint32_t reference_end = std::min<uint32_t>(ref_end, parameters.m_L);
-
-	if (ref_start >= reference_end)
+	if (reference_start >= reference_end)
 	{
-		std::cerr << "ERROR: Start '" << ref_start << "' has to be strictly smaller than end '" << reference_end << "'" << std::endl;
+		std::cerr << "ERROR: Start '" << reference_start << "' has to be strictly smaller than end '" << reference_end << "'" << std::endl;
 		exit(EXIT_FAILURE);
 	}
 
-	const genome_index_type region_L = reference_end - ref_start;
-	const seq_index_type seq_L = sequence.length();
+	seq_L = sequence.length();
+	region_L = reference_end - reference_start;
 
-	/////////////////
-	// DP matrices //
-	/////////////////
-	// left struct
-	struct left_clip_struct
-	{
-		T score;
+	viterbi_memory_requirements(seq_L, region_L);
+	viterbi_initialize_impl(parameters, sequence);
+	viterbi_recursion_impl(parameters, sequence);
+	return viterbi_backtrack_impl(parameters, sequence, alignments);
+}
 
-		bool from_begin : 1;
-		bool from_left_clip : 1;
-	};
-	std::unique_ptr<left_clip_struct[]> left_clip_matrix(new left_clip_struct[seq_L - 1]);
-
-	// main matrix
-	struct DP_entry_struct
-	{
-		struct match_struct
-		{
-			T score;
-
-			bool from_begin : 1;
-			bool from_left_clip : 1;
-			bool from_match : 1;
-			bool from_insertion : 1;
-			bool from_deletion : 1;
-		} match;
-
-		struct insertion_struct
-		{
-			T score;
-
-			bool from_match : 1;
-			bool from_insertion : 1;
-		} insertion;
-
-		struct deletion_struct
-		{
-			T score;
-
-			bool from_match : 1;
-			bool from_deletion : 1;
-		} deletion;
-	};
-	std::unique_ptr<DP_entry_struct[]> DP_matrix(new DP_entry_struct[seq_L * region_L]);
-
-	// right clips
-	struct right_clip_struct
-	{
-		T score;
-
-		bool from_right_clip : 1;
-		boost::dynamic_bitset<> from_match;
-	};
-	std::unique_ptr<right_clip_struct[]> right_clip_matrix(new right_clip_struct[seq_L - 1]);
-
-	// terminal
-	struct end_struct
-	{
-		T score;
-
-		bool from_right_clip : 1;
-		boost::dynamic_bitset<> from_match;
-	} end;
-
+template <typename T>
+void hmmalign<T>::viterbi_initialize_impl(
+	const reference_genome<T>& parameters,
+	const boost::string_ref& sequence) noexcept
+{
 	//////////////////////////
 	// Phase 1: DP matrices //
 	//////////////////////////
@@ -301,12 +244,12 @@ T hmmalign<T>::viterbi(
 	}
 
 	// first column
-	for (genome_index_type i = 0, genome_offset_i = ref_start; i < region_L; ++i, ++genome_offset_i)
+	for (genome_index_type i = 0, genome_offset_i = reference_start; i < region_L; ++i, ++genome_offset_i)
 	{
 		//////////////////
 		// match matrix //
 		//////////////////
-		DP_matrix[seq_L * (i) + (0)].match.score = parameters.m_E[ref_start + i][sequence[0]] + parameters.m_trans_matrix[ref_start + i].into_match.from_begin;
+		DP_matrix[seq_L * (i) + (0)].match.score = parameters.m_E[reference_start + i][sequence[0]] + parameters.m_trans_matrix[reference_start + i].into_match.from_begin;
 		DP_matrix[seq_L * (i) + (0)].match.from_begin = true;
 		DP_matrix[seq_L * (i) + (0)].match.from_left_clip = false;
 		DP_matrix[seq_L * (i) + (0)].match.from_match = false;
@@ -334,7 +277,7 @@ T hmmalign<T>::viterbi(
 		//////////////////
 		// match matrix //
 		//////////////////
-		DP_matrix[seq_L * (0) + (j)].match.score = parameters.m_E[ref_start][sequence[j]] + parameters.m_trans_matrix[ref_start].into_match.from_left_clip + left_clip_matrix[j - 1].score;
+		DP_matrix[seq_L * (0) + (j)].match.score = parameters.m_E[reference_start][sequence[j]] + parameters.m_trans_matrix[reference_start].into_match.from_left_clip + left_clip_matrix[j - 1].score;
 		DP_matrix[seq_L * (0) + (j)].match.from_begin = false;
 		DP_matrix[seq_L * (0) + (j)].match.from_left_clip = true;
 		DP_matrix[seq_L * (0) + (j)].match.from_match = false;
@@ -362,7 +305,13 @@ T hmmalign<T>::viterbi(
 		right_clip_matrix[j - 1].from_match.resize(region_L);
 		right_clip_matrix[j - 1].from_match.reset();
 	}
+}
 
+template <typename T>
+void hmmalign<T>::viterbi_recursion_impl(
+	const reference_genome<T>& parameters,
+	const boost::string_ref& sequence) noexcept
+{
 	// Calculate full DP matrix
 	T temp_tr, temp_max;
 	for (genome_index_type i = 1; i < region_L; ++i)
@@ -372,15 +321,15 @@ T hmmalign<T>::viterbi(
 			//////////////////
 			// match matrix //
 			//////////////////
-			DP_matrix[seq_L * (i) + (j)].match.score = parameters.m_E[ref_start + i][sequence[j]];
+			DP_matrix[seq_L * (i) + (j)].match.score = parameters.m_E[reference_start + i][sequence[j]];
 			DP_matrix[seq_L * (i) + (j)].match.from_begin = false;
 
 			// match ->
-			temp_max = parameters.m_trans_matrix[ref_start + i].into_match.from_match + DP_matrix[seq_L * (i - 1) + (j - 1)].match.score;
+			temp_max = parameters.m_trans_matrix[reference_start + i].into_match.from_match + DP_matrix[seq_L * (i - 1) + (j - 1)].match.score;
 			DP_matrix[seq_L * (i) + (j)].match.from_match = true;
 
 			// left_clip ->
-			temp_tr = parameters.m_trans_matrix[ref_start + i].into_match.from_left_clip + left_clip_matrix[j - 1].score;
+			temp_tr = parameters.m_trans_matrix[reference_start + i].into_match.from_left_clip + left_clip_matrix[j - 1].score;
 			if (temp_tr >= temp_max)
 			{
 				DP_matrix[seq_L * (i) + (j)].match.from_left_clip = true;
@@ -397,7 +346,7 @@ T hmmalign<T>::viterbi(
 			}
 
 			// insertion ->
-			temp_tr = parameters.m_trans_matrix[ref_start + i].into_match.from_insertion + DP_matrix[seq_L * (i - 1) + (j - 1)].insertion.score;
+			temp_tr = parameters.m_trans_matrix[reference_start + i].into_match.from_insertion + DP_matrix[seq_L * (i - 1) + (j - 1)].insertion.score;
 			if (temp_tr >= temp_max)
 			{
 				DP_matrix[seq_L * (i) + (j)].match.from_insertion = true;
@@ -415,7 +364,7 @@ T hmmalign<T>::viterbi(
 			}
 
 			// deletion ->
-			temp_tr = parameters.m_trans_matrix[ref_start + i].into_match.from_deletion + DP_matrix[seq_L * (i - 1) + (j - 1)].deletion.score;
+			temp_tr = parameters.m_trans_matrix[reference_start + i].into_match.from_deletion + DP_matrix[seq_L * (i - 1) + (j - 1)].deletion.score;
 			if (temp_tr >= temp_max)
 			{
 				DP_matrix[seq_L * (i) + (j)].match.from_deletion = true;
@@ -440,11 +389,11 @@ T hmmalign<T>::viterbi(
 			DP_matrix[seq_L * (i) + (j)].insertion.score = parameters.m_uniform_base_e[sequence[j]];
 
 			// match ->
-			temp_max = parameters.m_trans_matrix[ref_start + i].into_insertion.from_match + DP_matrix[seq_L * (i) + (j - 1)].match.score;
+			temp_max = parameters.m_trans_matrix[reference_start + i].into_insertion.from_match + DP_matrix[seq_L * (i) + (j - 1)].match.score;
 			DP_matrix[seq_L * (i) + (j)].insertion.from_match = true;
 
 			// insertion ->
-			temp_tr = parameters.m_trans_matrix[ref_start + i].into_insertion.from_insertion + DP_matrix[seq_L * (i) + (j - 1)].insertion.score;
+			temp_tr = parameters.m_trans_matrix[reference_start + i].into_insertion.from_insertion + DP_matrix[seq_L * (i) + (j - 1)].insertion.score;
 			if (temp_tr >= temp_max)
 			{
 				DP_matrix[seq_L * (i) + (j)].insertion.from_insertion = true;
@@ -467,11 +416,11 @@ T hmmalign<T>::viterbi(
 			DP_matrix[seq_L * (i) + (j)].deletion.score = 0;
 
 			// match ->
-			temp_max = parameters.m_trans_matrix[ref_start + i].into_deletion.from_match + DP_matrix[seq_L * (i - 1) + (j)].match.score;
+			temp_max = parameters.m_trans_matrix[reference_start + i].into_deletion.from_match + DP_matrix[seq_L * (i - 1) + (j)].match.score;
 			DP_matrix[seq_L * (i) + (j)].deletion.from_match = true;
 
 			// deletion ->
-			temp_tr = parameters.m_trans_matrix[ref_start + i].into_deletion.from_deletion + DP_matrix[seq_L * (i - 1) + (j)].deletion.score;
+			temp_tr = parameters.m_trans_matrix[reference_start + i].into_deletion.from_deletion + DP_matrix[seq_L * (i - 1) + (j)].deletion.score;
 			if (temp_tr >= temp_max)
 			{
 				DP_matrix[seq_L * (i) + (j)].deletion.from_deletion = true;
@@ -538,7 +487,7 @@ T hmmalign<T>::viterbi(
 	end.score = (seq_L > 1 ? parameters.m_into_end.from_right_clip + right_clip_matrix[(seq_L - 1) - 1].score : lower_limit);
 	for (genome_index_type i = 0; i < region_L; ++i)
 	{
-		temp_tr = (ref_start + i < parameters.m_L - 1 ? parameters.m_into_end.from_match : parameters.m_into_end.from_last_match) + DP_matrix[seq_L * (i) + (seq_L - 1)].match.score;
+		temp_tr = (reference_start + i < parameters.m_L - 1 ? parameters.m_into_end.from_match : parameters.m_into_end.from_last_match) + DP_matrix[seq_L * (i) + (seq_L - 1)].match.score;
 
 		if (temp_tr >= end.score)
 		{
@@ -553,7 +502,14 @@ T hmmalign<T>::viterbi(
 			end.from_match.set(i);
 		}
 	}
+}
 
+template <typename T>
+T hmmalign<T>::viterbi_backtrack_impl(
+	const reference_genome<T>& parameters,
+	const boost::string_ref& sequence,
+	std::vector<minimal_alignment>& alignments) noexcept
+{
 	////////////////////////
 	// Phase 2: backtrack //
 	////////////////////////
@@ -591,7 +547,7 @@ T hmmalign<T>::viterbi(
 			if (v.s == 'B')
 			{
 				// found an alignment
-				alignments.emplace_back(cur_path, v.i + ref_start);
+				alignments.emplace_back(cur_path, v.i + reference_start);
 			}
 			else
 			{

@@ -885,6 +885,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 
 #pragma omp parallel shared(progress)
 	{
+		hmmalign<T> aligner;
 		std::vector<minimal_alignment> forward_alns, reverse_alns;
 		T forward_score, reverse_score;
 
@@ -942,9 +943,10 @@ void single_end_aligner<T>::perform_alignment_impl(
 			// 2. perform alignments per strand
 			auto per_strand_alignment = [
 #ifndef NDEBUG
-				&alignment_stats,
+											&alignment_stats,
 #endif
-				this](const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, std::vector<minimal_alignment>& alignments) -> T {
+											&aligner,
+											this](const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, std::vector<minimal_alignment>& alignments) -> T {
 				int32_t POS;
 				int32_t end_POS;
 				T score;
@@ -984,7 +986,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 				}
 
 				alignments.clear();
-				score = hmmalign<T>::viterbi(m_parameters, query, POS, end_POS, alignments);
+				score = aligner.viterbi(m_parameters, query, POS, end_POS, alignments);
 
 				DEBUG_TRACE(std::cerr
 					<< "POS:" << std::right
@@ -1001,7 +1003,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 				{
 					// window size probably too small, perform sacrificial full-length alignment
 					alignments.clear();
-					score = hmmalign<T>::viterbi(m_parameters, query, 0, m_parameters.m_L, alignments);
+					score = aligner.viterbi(m_parameters, query, 0, m_parameters.m_L, alignments);
 
 #ifndef NDEBUG
 					++alignment_stats.num_sacrificial_alignments;
