@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.1)
 
 # set project name
 cmake_policy(SET CMP0048 NEW)
-project(ngshmmalign VERSION 0.1.1 LANGUAGES CXX)
+project(ngshmmalign VERSION 0.2 LANGUAGES CXX)
 add_definitions(-DPACKAGE_NAME="${PROJECT_NAME}" -DPACKAGE_VERSION="${PROJECT_VERSION}")
 
 # on macOS, MACOSX_RPATH is enabled by default on more recent versions
@@ -36,14 +36,6 @@ include(FeatureSummary)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# OpenMP
-find_package(OpenMP)
-if(OPENMP_FOUND)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-else()
-	message("OpenMP could not be found. ${PROJECT_NAME} will still work, albeit in single-threaded mode")
-endif()
 
 # Boost
 find_package(Boost 1.59.0 COMPONENTS filesystem iostreams program_options system REQUIRED)

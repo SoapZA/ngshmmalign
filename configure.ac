@@ -2,7 +2,7 @@ dnl Initialise Autoconf
 AC_PREREQ([2.69])
 AC_INIT(
 	[ngshmmalign],
-	[0.1.1],
+	[0.2],
 	[david.seifert@bsse.ethz.ch],
 	[ngshmmalign],
 	[https://github.com/cbg-ethz/ngshmmalign])
@@ -48,14 +48,6 @@ AC_PROG_CXX
 
 
 
-dnl ================
-dnl Check for OpenMP
-dnl ================
-AC_OPENMP
-CXXFLAGS="${CXXFLAGS} ${OPENMP_CXXFLAGS}"
-
-
-
 dnl ==================================
 dnl Set CXXFLAGS, CPPFLAGS and LDFLAGS
 dnl ==================================
@@ -76,6 +68,15 @@ dnl ===============
 dnl Check for C++11
 dnl ===============
 AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+
+
+
+dnl =================
+dnl Check for Threads
+dnl =================
+AX_PTHREAD
+CXXFLAGS="${CXXFLAGS} ${PTHREAD_CFLAGS}"
+LIBS="${LIBS} ${PTHREAD_LIBS}"
 
 
 

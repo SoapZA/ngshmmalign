@@ -42,8 +42,6 @@
 #include "dna_array.hpp"
 #include "utility_functions.hpp"
 
-extern int num_threads;
-
 namespace
 {
 
@@ -77,8 +75,6 @@ struct background_rates
 	friend std::ostream& operator<<(std::ostream& output, const background_rates& bg_rates) noexcept
 	{
 		return output << std::setprecision(2)
-					  << "\tNumber of threads -t:    " << num_threads << std::endl
-					  << std::endl
 					  << "\tLower frequency cutoff:  " << bg_rates.low_frequency_cutoff << std::endl
 					  << "\tError rate:              " << bg_rates.error_rate << std::endl
 					  << "\tGap open:                " << bg_rates.gap_open << std::endl

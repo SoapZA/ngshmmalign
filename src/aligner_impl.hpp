@@ -22,11 +22,13 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <mutex>
 #include <random>
 #include <ratio>
 #include <stdexcept>
@@ -39,10 +41,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/progress.hpp>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 #include "aligner.hpp"
 #include "debug.hpp"
@@ -773,7 +771,9 @@ void single_end_aligner<T>::estimate_parameters(
 	const uint64_t seed,
 	const bool verbose,
 	const bool keep_mafft_files,
-	const bool ambig_bases_unequal_weight) noexcept
+	const bool ambig_bases_unequal_weight,
+	const int32_t num_threads,
+	const int32_t chunk_size) noexcept
 {
 	// 0. create random TMP directory name in order to avoid clashes
 	std::default_random_engine rng(seed);
@@ -787,7 +787,7 @@ void single_end_aligner<T>::estimate_parameters(
 
 	// 1. perform rough alignment first
 	std::cout << ++m_phase << ") Performing first rough alignment" << std::endl;
-	perform_alignment_impl(false, verbose);
+	perform_alignment_impl(false, verbose, num_threads, chunk_size);
 
 	// 2. chop up genome and extract reads
 	partioned_genome separated_reads(tmpdir_root, m_parameters.m_L, m_parameters.read_length_profile);
@@ -825,11 +825,12 @@ void single_end_aligner<T>::estimate_parameters(
 
 // 5. perform alignment
 void display_progress(
-	const unsigned long& progress,
-	const unsigned long total) noexcept
+	const std::atomic<int32_t>& global_idx,
+	const int32_t total) noexcept
 {
 	boost::progress_display show_progress(total);
-	unsigned long now = 0, previous = 0;
+	int32_t now{};
+	int32_t previous{};
 
 	do
 	{
@@ -837,84 +838,73 @@ void display_progress(
 		show_progress += (now - previous);
 
 		previous = now;
-		now = progress;
+		now = global_idx.load(std::memory_order_relaxed);
 	} while (now < total);
 }
 
 template <typename T>
-void single_end_aligner<T>::perform_alignment_impl(
+void align_thread_worker(
 	const bool exhaustive,
-	const bool verbose) noexcept
+	std::atomic<int32_t>& global_idx,
+	std::vector<read_entry>& reads,
+	std::mutex& mutex_lock,
+	const int32_t chunk_size,
+	const reference_genome<T> parameters,
+	const int32_t max_read_length)
 {
-	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
-
-	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
-
-	const auto end_it = m_reads.cend();
-	unsigned long progress = 0;
-
 	// minimum number of matched k-mers of a read to be considered the correct strand
-	constexpr uint32_t min_hash_pos_better = 20;
+	constexpr const uint32_t min_hash_pos_better = 20;
 
 	// maximum number of matched k-mers of a read to be considered the correct strand
-	constexpr uint32_t max_hash_pos_worse = 2;
+	constexpr const uint32_t max_hash_pos_worse = 2;
 
-#ifndef NDEBUG
-	struct alignment_stats_struct
-	{
-		uint64_t num_exhaustive_alignments = 0;
-		uint64_t num_indexed_alignments = 0;
-		uint64_t num_sacrificial_alignments = 0;
-	} alignment_stats;
-	std::cerr << std::endl;
-#endif
+	const int32_t total = reads.size();
+	int32_t thread_idx{};
 
-	std::function<void()> display_func;
-#ifdef NDEBUG
-	if (verbose)
+	// 1. store alignment results in temporary vector
+	//    in order to avoid false sharing
+	struct temp_result
 	{
-		display_func = std::bind(display_progress, std::cref(progress), m_reads.size());
-	}
-	else
-#endif
-	{
-		display_func = []() {
-		};
-	}
-	std::thread display_thread(display_func);
+		read_entry* read;
+		bool reverse_complement;
+		int64_t score;
+		std::vector<minimal_alignment> alignments;
 
-#pragma omp parallel shared(progress)
+		temp_result(
+			read_entry* read_,
+			bool reverse_complement_,
+			int64_t score_,
+			std::vector<minimal_alignment>&& alignments_) : read{ read_ },
+															reverse_complement{ reverse_complement_ },
+															score{ score_ },
+															alignments{ std::move(alignments_) } {}
+	};
+	std::vector<temp_result> temp_result_alignments;
+
+	while ((thread_idx = global_idx.fetch_add(chunk_size, std::memory_order_relaxed)) < total)
 	{
 		hmmalign<T> aligner;
-		std::vector<minimal_alignment> forward_alns, reverse_alns;
-		T forward_score, reverse_score;
 
-		std::string rev_seq;
-
-#pragma omp for schedule(dynamic, 200)
-		for (auto it = m_reads.begin(); it < end_it; ++it)
+		const int32_t idx_end = std::min(total, thread_idx + chunk_size);
+		for (int32_t i = thread_idx; i < idx_end; ++i)
 		{
-			read_entry& read_entry_ref = *it;
+			const read_entry& read_entry_ref = reads[i];
 			const boost::string_ref seq = read_entry_ref.m_fastq_record.m_seq;
 
-			if (verbose)
-			{
-#pragma omp atomic
-				++progress;
-			}
-
 			// 1. first use heuristics to determine strand
+			T forward_score, reverse_score;
 			bool align_forward = false;
 			forward_score = std::numeric_limits<decltype(forward_score)>::min();
-			auto forward_stats = m_parameters.find_pos(seq);
+			auto forward_stats = parameters.find_pos(seq);
 
 			bool align_reverse = false;
 			reverse_score = std::numeric_limits<decltype(reverse_score)>::min();
 
+			std::string rev_seq;
 			rev_seq.resize(seq.size());
 			std::transform(seq.crbegin(), seq.crend(), rev_seq.begin(), rev_comp_char);
 
-			auto reverse_stats = m_parameters.find_pos(rev_seq);
+			auto reverse_stats = parameters.find_pos(rev_seq);
 
 			bool exhaustive_alignment = exhaustive;
 
@@ -946,7 +936,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 											&alignment_stats,
 #endif
 											&aligner,
-											this](const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, std::vector<minimal_alignment>& alignments) -> T {
+											parameters](const boost::string_ref& query, bool exhaustive, const typename reference_genome<T>::index_stat& heuristics, std::vector<minimal_alignment>& alignments) -> T {
 				int32_t POS;
 				int32_t end_POS;
 				T score;
@@ -957,7 +947,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 				if (exhaustive)
 				{
 					POS = 0;
-					end_POS = m_parameters.m_L;
+					end_POS = parameters.m_L;
 #ifndef NDEBUG
 					++alignment_stats.num_exhaustive_alignments;
 #endif
@@ -972,7 +962,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 					POS = std::max<int32_t>(0, POS);
 
 					end_POS = heuristics.POS + query.length() + buffer;
-					end_POS = std::min<int32_t>(end_POS, m_parameters.m_L);
+					end_POS = std::min<int32_t>(end_POS, parameters.m_L);
 
 #ifndef NDEBUG
 					// // test for detection of failed heuristic
@@ -980,13 +970,13 @@ void single_end_aligner<T>::perform_alignment_impl(
 					// POS = std::max<int32_t>(0, POS);
 					//
 					// end_POS = heuristics.POS + query.length() - 100;
-					// end_POS = std::min<int32_t>(end_POS, m_parameters.m_L);
+					// end_POS = std::min<int32_t>(end_POS, parameters.m_L);
 					++alignment_stats.num_indexed_alignments;
 #endif
 				}
 
 				alignments.clear();
-				score = aligner.viterbi(m_parameters, query, POS, end_POS, alignments);
+				score = aligner.viterbi(parameters, query, POS, end_POS, alignments);
 
 				DEBUG_TRACE(std::cerr
 					<< "POS:" << std::right
@@ -998,12 +988,12 @@ void single_end_aligner<T>::perform_alignment_impl(
 					<< std::setw(14) << "True End:"
 					<< std::setw(6) << alignments.front().m_POS + alignments.front().m_segment_length << std::endl);
 
-				if ((((alignments.front().m_POS - alignments.front().m_left_clip_length < POS) && (POS != 0)) || ((alignments.front().m_POS + alignments.front().m_segment_length + alignments.front().m_right_clip_length > end_POS) && (end_POS != static_cast<int32_t>(m_parameters.m_L))))
+				if ((((alignments.front().m_POS - alignments.front().m_left_clip_length < POS) && (POS != 0)) || ((alignments.front().m_POS + alignments.front().m_segment_length + alignments.front().m_right_clip_length > end_POS) && (end_POS != static_cast<int32_t>(parameters.m_L))))
 					&& (exhaustive == false))
 				{
 					// window size probably too small, perform sacrificial full-length alignment
 					alignments.clear();
-					score = aligner.viterbi(m_parameters, query, 0, m_parameters.m_L, alignments);
+					score = aligner.viterbi(parameters, query, 0, parameters.m_L, alignments);
 
 #ifndef NDEBUG
 					++alignment_stats.num_sacrificial_alignments;
@@ -1014,6 +1004,7 @@ void single_end_aligner<T>::perform_alignment_impl(
 				return score;
 			};
 
+			std::vector<minimal_alignment> forward_alns, reverse_alns;
 			if (align_forward)
 			{
 				forward_score = per_strand_alignment(seq, exhaustive_alignment, forward_stats, forward_alns);
@@ -1028,29 +1019,90 @@ void single_end_aligner<T>::perform_alignment_impl(
 			if (reverse_score > forward_score)
 			{
 				// reverse complementary is better
-				read_entry_ref.SCORE = reverse_score;
-				read_entry_ref.m_cooptimal_alignments = std::move(reverse_alns);
-
-				// flip reverse complementary bit
-				// setting it to true is not enough
-				// imagine:
-				// 1st run:
-				//     <-------    Sequence + QUAL get reverse complemented
-				//
-				// 2nd run:
-				//     ------->    Sequence + QUAL are forward aligned
-				//                 but have originally been reverse complemented
-				read_entry_ref.m_reverse_compl = !(read_entry_ref.m_reverse_compl);
-				read_entry_ref.m_fastq_record.m_seq = std::move(rev_seq);
-				std::reverse(read_entry_ref.m_fastq_record.m_qual.begin(), read_entry_ref.m_fastq_record.m_qual.end());
+				temp_result_alignments.emplace_back(&reads[i], true, reverse_score, std::move(reverse_alns));
 			}
 			else
 			{
 				// forward is better
-				read_entry_ref.SCORE = forward_score;
-				read_entry_ref.m_cooptimal_alignments = std::move(forward_alns);
+				temp_result_alignments.emplace_back(&reads[i], false, forward_score, std::move(forward_alns));
 			}
 		}
+	}
+
+	// 2. write temporary results back into main vector
+	std::lock_guard<std::mutex> lock{ mutex_lock };
+	for (auto& j : temp_result_alignments)
+	{
+		read_entry& read_entry_ref = *(j.read);
+
+		read_entry_ref.SCORE = j.score;
+		read_entry_ref.m_cooptimal_alignments = std::move(j.alignments);
+
+		if (j.reverse_complement)
+		{
+			// flip reverse complementary bit
+			// setting it to true is not enough
+			// imagine:
+			// 1st run:
+			//     <-------    Sequence + QUAL get reverse complemented
+			//
+			// 2nd run:
+			//     ------->    Sequence + QUAL are forward aligned
+			//                 but have originally been reverse complemented
+			read_entry_ref.m_reverse_compl = !(read_entry_ref.m_reverse_compl);
+
+			std::string& seq = read_entry_ref.m_fastq_record.m_seq;
+			std::string rev_seq;
+			rev_seq.resize(seq.size());
+			std::transform(seq.crbegin(), seq.crend(), rev_seq.begin(), rev_comp_char);
+			seq = std::move(rev_seq);
+
+			std::reverse(read_entry_ref.m_fastq_record.m_qual.begin(), read_entry_ref.m_fastq_record.m_qual.end());
+		}
+	}
+};
+
+template <typename T>
+void single_end_aligner<T>::perform_alignment_impl(
+	const bool exhaustive,
+	const bool verbose,
+	const int32_t num_threads,
+	const int32_t chunk_size) noexcept
+{
+	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
+
+	std::cout << "   Aligning reads (" << m_reads.size() << ")" << std::flush;
+
+#ifndef NDEBUG
+	struct alignment_stats_struct
+	{
+		uint64_t num_exhaustive_alignments = 0;
+		uint64_t num_indexed_alignments = 0;
+		uint64_t num_sacrificial_alignments = 0;
+	} alignment_stats;
+	std::cerr << std::endl;
+#endif
+
+	std::vector<std::thread> aln_threads;
+	aln_threads.reserve(num_threads + 1);
+
+	std::atomic<int32_t> global_idx{ 0 };
+	std::mutex global_lock;
+
+	if (verbose)
+	{
+		aln_threads.emplace_back(display_progress, std::cref(global_idx), m_reads.size());
+	}
+
+	for (int32_t i = 0; i < num_threads; ++i)
+	{
+		aln_threads.emplace_back(std::thread(align_thread_worker<T>, exhaustive, std::ref(global_idx), std::ref(m_reads), std::ref(global_lock), chunk_size, m_parameters, m_max_read_length.value()));
+	}
+
+	// wait for threads to complete
+	for (auto& j : aln_threads)
+	{
+		j.join();
 	}
 
 #ifndef NDEBUG
@@ -1060,22 +1112,24 @@ void single_end_aligner<T>::perform_alignment_impl(
 		<< "Number of sacrificial alignments: " << alignment_stats.num_sacrificial_alignments << std::endl;
 #endif
 
-	display_thread.join();
 	std::cout << std::endl;
 }
 
 template <typename T>
 void single_end_aligner<T>::perform_alignment(
 	const bool exhaustive,
-	const bool verbose) noexcept
+	const bool verbose,
+	const int32_t num_threads,
+	const int32_t chunk_size) noexcept
 {
 	static_assert(std::is_integral<T>::value, "T needs to be an integral type!\n");
 
-	std::cout << ++m_phase << ") Performing alignment" << std::endl;
+	std::cout << ++m_phase << ") Performing alignment" << std::endl
+			  << "   Number of threads -t:    " << num_threads << std::endl;
 	std::chrono::steady_clock::time_point time_start = std::chrono::steady_clock::now();
 
 	// perform actual alignment
-	perform_alignment_impl(exhaustive, verbose);
+	perform_alignment_impl(exhaustive, verbose, num_threads, chunk_size);
 
 	std::chrono::steady_clock::time_point time_end = std::chrono::steady_clock::now();
 	const double duration = std::chrono::duration_cast<std::chrono::nanoseconds>(time_end - time_start).count() / 1E9;

@@ -36,8 +36,6 @@
 #include "hmmalign.hpp"
 #include "reference.hpp"
 
-int num_threads;
-
 clip_mode read_entry::m_clip = clip_mode::soft;
 boost::string_ref read_entry::RNAME;
 
@@ -61,6 +59,9 @@ int main(int argc, const char* argv[])
 
 	background_rates params;
 
+	int32_t num_threads;
+	int32_t chunk_size;
+
 	int32_t min_required_mapped_bases;
 	uint64_t random_seed;
 
@@ -77,7 +78,10 @@ int main(int argc, const char* argv[])
 		(",R", boost::program_options::value<decltype(profile_filename)>(&profile_filename), "File containing the profile/MSA of the reference. Will perform a comprehensive parameter estimation using MAFFT. Mutually exclusive with -r option")
 		(",o", boost::program_options::value<decltype(output_filename)>(&output_filename)->default_value("aln.sam"), "Filename where alignment will be written to")
 		("wrong,w", boost::program_options::value<decltype(rejects_filename)>(&rejects_filename)->default_value("/dev/null"), "Filename where alignment will be written that are filtered (too short, unpaired)")
+
 		(",t", boost::program_options::value<decltype(num_threads)>(&num_threads)->default_value(std::thread::hardware_concurrency()), "Number of threads to use for alignment. Defaults to number of logical cores found")
+		(",C", boost::program_options::value<decltype(chunk_size)>(&chunk_size)->default_value(200), "Chunk size, i.e. number of reads to process in one block per thread")
+
 		(",l", "Do not clean up MAFFT temporary MSA files")
 		(",E", "Use full-exhaustive search, avoiding indexed lookup")
 		(",X", "Replace general aligned state 'M' with '=' (match) and 'X' (mismatch) in CIGAR")
@@ -218,11 +222,6 @@ int main(int argc, const char* argv[])
 
 	std::vector<std::string> input_files(global_options["input-files"].as<std::vector<std::string>>());
 
-// set OpenMP number of threads
-#ifdef _OPENMP
-	omp_set_num_threads(num_threads);
-#endif
-
 	if (!boost::filesystem::exists(profile_filename))
 	{
 		std::cerr << "ERROR: Reference file '" << profile_filename << "' does not exist!" << std::endl;
@@ -257,11 +256,11 @@ int main(int argc, const char* argv[])
 	/* 3) perform parameter estimation */
 	if (perform_hmm_learning)
 	{
-		ngs_aligner->estimate_parameters(data_root, mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight);
+		ngs_aligner->estimate_parameters(data_root, mafft, params, random_seed, verbose, keep_mafft_files, ambig_bases_unequal_weight, num_threads, chunk_size);
 	}
 
 	/* 4) perform alignment */
-	ngs_aligner->perform_alignment(exhaustive, verbose);
+	ngs_aligner->perform_alignment(exhaustive, verbose, num_threads, chunk_size);
 
 	/* 5) perform post-alignment processing */
 	ngs_aligner->post_alignment_processing(differentiate_match_state, random_seed, params.low_frequency_cutoff, params.error_rate, ambig_bases_unequal_weight);

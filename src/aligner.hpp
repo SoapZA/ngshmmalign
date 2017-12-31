@@ -152,10 +152,10 @@ public:
 	void load_parameters(const std::string& input_file, background_rates& error_rates, bool ambig_bases_unequal_weight) noexcept;
 
 	// 4. perform parameter estimation
-	void estimate_parameters(const std::string& data_root, const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight) noexcept;
+	void estimate_parameters(const std::string& data_root, const std::string& mafft, const background_rates& error_rates, uint64_t seed, bool verbose, bool keep_mafft_files, bool ambig_bases_unequal_weight, int32_t num_threads, int32_t chunk_size) noexcept;
 
 	// 5. perform alignment
-	void perform_alignment(bool exhaustive, bool verbose) noexcept;
+	void perform_alignment(bool exhaustive, bool verbose, int32_t num_threads, int32_t chunk_size) noexcept;
 
 	// 6. post-alignment processing
 	void post_alignment_processing(bool differentiate_match_state, uint64_t seed, double min_freq, double error_rate, bool ambig_bases_unequal_weight) noexcept;
@@ -171,7 +171,7 @@ protected:
 	uint32_t get_length_profile() const noexcept;
 
 	// 5. perform alignment
-	void perform_alignment_impl(bool exhaustive, bool verbose) noexcept;
+	void perform_alignment_impl(bool exhaustive, bool verbose, int32_t num_threads, int32_t chunk_size) noexcept;
 
 	// 6. post-alignment processing
 	virtual void flag_reads() noexcept;
