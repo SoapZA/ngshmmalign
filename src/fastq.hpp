@@ -216,11 +216,12 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 					break;
 
 				case 3:
-					if ((cur_letter < 33) || (cur_letter > 73))
+					if ((cur_letter < 33) || (cur_letter > 126))
 					{
-						std::cerr << "ERROR: Malformed FASTQ quality line " << input_file << " on line " << line << " contains invalid quality character '" << cur_letter << "'. The range has to start at '!' (= 0) and end at 'I' (= 41), inclusive." << std::endl;
+						std::cerr << "ERROR: Malformed FASTQ quality line " << input_file << " on line " << line << " contains invalid quality character '" << cur_letter << "'. The range has to start at '!' (= 0) and end at '~' (= 93), inclusive." << std::endl;
 						exit(EXIT_FAILURE);
 					}
+
 					break;
 			}
 		}
