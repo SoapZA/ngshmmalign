@@ -46,7 +46,7 @@ else()
 endif()
 
 # Boost
-find_package(Boost 1.59.0 COMPONENTS filesystem iostreams program_options system REQUIRED)
+find_package(Boost 1.50.0 COMPONENTS filesystem iostreams program_options system REQUIRED)
 
 
 #########

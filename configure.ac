@@ -83,7 +83,7 @@ AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory])
 dnl ===============
 dnl Check for Boost
 dnl ===============
-AX_BOOST_BASE([1.59], [], [AC_MSG_ERROR([could not find a suitable boost installation.])])
+AX_BOOST_BASE([1.50], [], [AC_MSG_ERROR([could not find a suitable boost installation.])])
 AX_BOOST_SYSTEM
 AX_BOOST_PROGRAM_OPTIONS
 AX_BOOST_FILESYSTEM

@@ -88,7 +88,7 @@ In order to install **ngshmmalign**, download a release tarball from https://git
 
     GCC 4.8 and later have been verified to work, although we recommend you use at least GCC 5. Clang 3.7 and later have been verified and are also recommended, due to Clang introducing OpenMP only with 3.7. Versions of Clang before 3.7 will not be able to utilise multi-threading.
 
-2.  **Boost**; at least 1.59 (http://www.boost.org/)
+2.  **Boost**; at least 1.50 (http://www.boost.org/)
 
     Boost provides the necessary abstractions for many different types.
 
