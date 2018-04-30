@@ -114,10 +114,6 @@ If you wish to bootstrap the Autotools-based build system from a git checkout, y
 
     GNU Automake produces the Makefile.in precursor, that is processed with ./configure to yield the final Makefile.
 
-3.  **Autoconf Archive**; at least 2016.03.20 (http://www.gnu.org/software/autoconf-archive/)
-
-    Our configure.ac requires a number of m4 macros from the Autoconf archive.
-
 
 ### macOS
 We strongly recommend you use MacPorts (http://www.macports.org) to install dependencies. We also recommend you employ Clang from MacPorts, as it is the only OpenMP-capable compiler that is simultaneously ABI-compatible with installed libraries, such as boost. While building with GCC on macOS is possible, it requires an orthogonal toolchain which is far more involved and beyond the scope of this README.

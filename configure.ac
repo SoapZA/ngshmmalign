@@ -6,6 +6,7 @@ AC_INIT(
 	[david.seifert@bsse.ethz.ch],
 	[ngshmmalign],
 	[https://github.com/cbg-ethz/ngshmmalign])
+AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([src/main.cpp])
 AC_LANG([C++])
 
@@ -75,7 +76,7 @@ AS_IF([test "x${enable_flags_setting}" = "xyes" && test "x${enable_debug}" = "xn
 dnl ===============
 dnl Check for C++11
 dnl ===============
-AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+AX_CXX_COMPILE_STDCXX([11], [noext], [mandatory])
 
 
 
