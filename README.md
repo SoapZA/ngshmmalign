@@ -110,7 +110,7 @@ If you wish to bootstrap the Autotools-based build system from a git checkout, y
 
     GNU Autoconf produces the ./configure script from configure.ac.
 
-2.  **Automake**; latest 1.15 release (http://www.gnu.org/software/automake/)
+2.  **Automake**; 1.14 or later release (http://www.gnu.org/software/automake/)
 
     GNU Automake produces the Makefile.in precursor, that is processed with ./configure to yield the final Makefile.
 

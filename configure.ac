@@ -93,7 +93,7 @@ AX_BOOST_IOSTREAMS
 dnl ===================
 dnl Initialise Automake
 dnl ===================
-AM_INIT_AUTOMAKE([1.15 foreign dist-bzip2 no-dist-gzip subdir-objects silent-rules])
+AM_INIT_AUTOMAKE([1.14 foreign dist-bzip2 no-dist-gzip subdir-objects silent-rules])
 
 
 
