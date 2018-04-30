@@ -1,0 +1,75 @@
+language: cpp
+sudo: required
+dist: trusty
+
+matrix:
+  include:
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-4.8
+      env: COMPILER=g++-4.8
+
+    - os: linux
+      compiler: gcc
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+      env: COMPILER=g++-7
+
+    - os: osx
+      compiler: clang
+      env: COMPILER=clang++
+
+    - os: osx
+      compiler: clang
+      env: COMPILER=clang++-5
+
+addons:
+  apt:
+    packages:
+      - libboost-all-dev
+      - cmake
+      - ninja-build
+    sources:
+      - kalakris-cmake
+      - george-edison55-precise-backports
+
+before_install:
+  - |
+    if [[ ${TRAVIS_OS_NAME} == "osx" ]]; then
+      brew update;
+      brew install cmake boost ninja;
+
+      if [[ ${COMPILER} == "clang++-5" ]]; then
+        brew install llvm@5;
+
+        export COMPILER="clang++";
+        export PATH="/usr/local/opt/llvm@5/bin:${PATH}";
+        export LDFLAGS="-Wl,-dead_strip_dylibs -L/usr/local/opt/llvm@5/lib";
+        export CXXFLAGS="-ffast-math -pedantic -O3 -Wall -Wno-redeclared-class-member -Wno-unused-local-typedef -I/usr/local/opt/llvm@5/include";
+      fi
+    elif [[ ${TRAVIS_OS_NAME} == "linux" ]]; then
+      sudo apt-get update;
+      sudo apt-get install -y autoconf automake libboost-all-dev cmake;
+
+      # because Travis is so irrepairably broken, we need to download random ninja binaries
+      wget https://github.com/ninja-build/ninja/releases/download/v1.7.2/ninja-linux.zip;
+      unzip -q ninja-linux.zip -d tools;
+
+      export PATH="${PWD}/tools:${PATH}";
+    fi
+
+script:
+  - echo "Testing Autotools"
+  - autoreconf -vif
+  - mkdir build-ac && pushd build-ac && ../configure CXX="${COMPILER}" && make clean && make distcheck && popd
+  - echo "Testing CMake"
+  - mkdir build-cmake && pushd build-cmake && CXX="${COMPILER}" cmake -DBUILD_TESTING=ON -GNinja .. && ninja -v && ninja -v test && popd
