@@ -1,4 +1,6 @@
 # ngshmmalign
+[![Build Status](https://travis-ci.org/cbg-ethz/ngshmmalign.svg?branch=master)](https://travis-ci.org/cbg-ethz/ngshmmalign)
+
 David Seifert (david.seifert@bsse.ethz.ch)
 
 
