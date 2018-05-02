@@ -1090,7 +1090,7 @@ void single_end_aligner<T>::perform_alignment(
 
 // 6. post-alignment processing
 template <typename T>
-void single_end_aligner<T>::post_alignment_processing(const bool differentiate_match_state, const uint64_t seed, const double min_freq, const double error_rate, bool ambig_bases_unequal_weight) noexcept
+void single_end_aligner<T>::post_alignment_processing(const bool differentiate_match_state, const uint64_t, const double min_freq, const double error_rate, bool ambig_bases_unequal_weight) noexcept
 {
 	std::cout << ++m_phase << ") Performing post-alignment processing" << std::endl;
 

@@ -764,7 +764,7 @@ void reference_genome<T>::save_to_file(std::ostream& ofs)
 
 // Misc
 template <typename V, typename std::enable_if<std::is_floating_point<V>::value, int>::type = 0>
-void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
+void inline print_sum(std::ostream&, V v, const bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
 {
 	std::cout << prefix << std::right << std::setw(30 - strlen(prefix)) << v << suffix;
 	V diff = std::fabs(v - 1.0);
@@ -776,7 +776,7 @@ void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summatio
 }
 
 template <typename V, typename std::enable_if<std::is_integral<V>::value, int>::type = 0>
-void inline print_sum(std::ostream& output, V v, const bool fail_on_non_summation, const char* suffix = "", const char* prefix = "")
+void inline print_sum(std::ostream&, V, const bool, const char* = "", const char* = "")
 {
 }
 
