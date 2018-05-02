@@ -45,6 +45,7 @@ int main()
 		decltype(M_D_p)(M_D_p),
 		decltype(D_D_p)(D_D_p),
 		background_rates{
+			0.05,
 			substitution_rate,
 			gap_open,
 			gap_extend,
