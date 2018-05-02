@@ -670,7 +670,7 @@ void reference_genome<T>::set_parameters(
 
 #ifndef NDEBUG
 	std::ofstream debug_output("DEBUG_emissions.log");
-	for (std::string::size_type i = 0; i < L; ++i)
+	for (int32_t i = 0; i < L; ++i)
 	{
 		debug_output << "Pos " << i << ":\n"
 					 << E_p[i] << '\n';
