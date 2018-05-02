@@ -94,7 +94,7 @@ void fastq_read(const boost::iostreams::mapped_file_source& input_file, std::vec
 						{
 							// identifier contains space, can possibly
 							// extract mate-pair information
-							if ((paired_end == true) && (header_length >= id_len + 2))
+							if ((paired_end == true) && (header_length >= static_cast<int>(id_len) + 2))
 							{
 								// has at least one character overhanging
 								first_letter_after_space = *(id_ptr + id_len + 1);

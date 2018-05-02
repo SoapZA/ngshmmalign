@@ -943,7 +943,9 @@ bool reference_genome<T>::display_parameters(std::ostream& output, const bool fa
 
 	output << std::boolalpha << std::fixed << std::setprecision(5) << std::endl
 		   << "Emission tables (log):" << std::endl;
-	for (int32_t j = 0; j < m_L; ++j)
+
+	const int32_t hmm_length = m_L;
+	for (int32_t j = 0; j < hmm_length; ++j)
 	{
 		output << std::left << std::setw(7) << j;
 		for (char c : { 'A', 'C', 'G', 'T', 'N' })
