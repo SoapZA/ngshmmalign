@@ -26,7 +26,8 @@ ngshmmalign_deps = [
       'system',
       'program_options',
       'filesystem',
-      'iostreams'],
+      'iostreams',
+      'regex'],
     required : true)]
 
 # OpenMP
